@@ -1,10 +1,10 @@
 # Beamlink - Local File Sharing with Server-Managed Peers
 
-Beamlink is a simple agent-based network for sending files locally. Agents communicate directly and Nexus coordinates the network.
+Beamlink is an agent-based network for sending files locally. Agents communicate directly and Nexus coordinates the network.
 
 ## Prerequisites
 
-- **Java 17+ JVM** - [Amazon Corretto](https://aws.amazon.com/corretto/) recommended
+- **Java 17+** - [Eclipse Temurin](https://adoptium.net/)
 
 ## How it works
 
@@ -12,7 +12,7 @@ Beamlink is a simple agent-based network for sending files locally. Agents commu
 
 - Runs with launcher.bat
 
-- Registers with Nexus and gets an auth token
+- Gets two UUIDs on registration, one for internal routing and one public-facing to keep internal structure hidden
 
 - Stores auth token locally (file-based, no db)
 
@@ -38,9 +38,9 @@ Beamlink is a simple agent-based network for sending files locally. Agents commu
 
 **Agent**
 
-- Install [Java 17+ JVM](https://aws.amazon.com/corretto/)
+- Install [Java 17+](https://adoptium.net/)
 
-- Download adn extract **beamlink-agent-0.0.1-pre1.zip**
+- Download and extract **beamlink-agent-0.0.1-pre1.zip**
 
 - Run **launcher.bat**
 
@@ -48,7 +48,7 @@ Beamlink is a simple agent-based network for sending files locally. Agents commu
 
 **Nexus**
 
-- Install [Java 17+ JVM](https://aws.amazon.com/corretto/)
+- Install [Java 17+](https://adoptium.net/)
 
 - Download and extract **beamlink-nexus-0.0.1-pre1.zip**
 
@@ -58,23 +58,25 @@ Beamlink is a simple agent-based network for sending files locally. Agents commu
 
 ## Configuration
 
-Configuration files are located at `config/application.yaml` for both Agent and Nexus.
-
 **Nexus**
 
-- `server.port` - port Nexus runs on
-- `spring.datasource.username` / `password` - database credentials
-- `nexus.jwt.secret` - leave `auto` to generate, or replace with your own
-- `nexus.cors.static-origins` - set to your Nexus IP and port for UI access
-- `nexus.admin.username` / `password` - Admin UI login credentials
+- Copy `.env.example` to `.env` and fill in your values before running.
+- Additional config in `config/application.yaml`
+- `NEXUS_IP` - leave `auto` to detect local IP on first launch
+- `NEXUS_PORT` - default is `7472`, changing it is recommended
+- `NEXUS_JWT_SECRET` - leave `auto` to generate on first launch
+- `NEXUS_ADMIN_USERNAME` / `NEXUS_ADMIN_PASSWORD` - Admin UI credentials
+- `DB_USERNAME` / `DB_PASSWORD` - PostgreSQL credentials
+- `MULTIPART_MAX_FILE_SIZE` - max upload size in MB, `-1` for unlimited
 
 **Agent**
 
-- `server.port` - port Agent runs on
-- `agent.nexus.url` - set to your Nexus IP and port if you changed
-- `agent.name` - initial display name of the agent on the network
-- `agent.ui.username` / `password` - Agent UI login credentials
-- `agent.ui.jwt-secret` - leave `auto` to generate or replace with your own
+- Configured via `config/application.yaml`
+- `server.port` - port that Agent runs on
+- `agent.nexus.url` - set to your Nexus IP and port
+- `agent.name` - display name on the network
+- `agent.ui.username` / `password` - Agent UI credentials
+- `agent.ui.jwt-secret` - leave `auto` to generate
 
 ## Notes
 
@@ -83,5 +85,7 @@ Configuration files are located at `config/application.yaml` for both Agent and 
 - Windows-only for now
 
 - Built for local networks
+
+- File transfers go directly between agents over HTTP. Backend-proxied transfers not yet implemented
 
 - HTTPS recommended if exposed to outside of LAN
