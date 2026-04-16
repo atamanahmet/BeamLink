@@ -21,9 +21,14 @@ import java.util.UUID;
 public class PendingRename {
     @Id
     @GeneratedValue(strategy = GenerationType.UUID)
+    @Column(columnDefinition = "uuid")
     private UUID id;
+
     private String agentId;
+
     private String currentName;
+
     private String requestedName;
+
     private Instant requestedAt;
 }

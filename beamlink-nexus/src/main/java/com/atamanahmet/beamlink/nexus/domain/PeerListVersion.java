@@ -16,6 +16,7 @@ public class PeerListVersion {
 
         @Id
         @GeneratedValue(strategy = GenerationType.IDENTITY)
+        @Column(columnDefinition = "INTEGER")
         private Long id;
 
         private Long version = 1L;

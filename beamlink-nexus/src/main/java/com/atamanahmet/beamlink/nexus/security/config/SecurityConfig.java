@@ -48,7 +48,6 @@ public class SecurityConfig {
                 .addFilterBefore(dynamicCorsFilter, UsernamePasswordAuthenticationFilter.class)
                 .addFilterBefore(agentTokenFilter, UsernamePasswordAuthenticationFilter.class)
                 .authorizeHttpRequests(auth -> auth
-
                         // Static frontend
                         .requestMatchers(
                                 "/",

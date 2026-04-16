@@ -20,6 +20,7 @@ public class Agent {
 
     @Id
     @GeneratedValue(strategy = GenerationType.UUID)
+    @Column(columnDefinition = "uuid")
     private UUID id;
 
     private String name;
@@ -32,7 +33,7 @@ public class Agent {
     @Column(nullable = false)
     private AgentState state;
 
-    @Column(name = "public_id", unique = true)
+    @Column(name = "public_id", unique = true, columnDefinition = "uuid")
     private UUID publicId;
 
     private String requestedName;
