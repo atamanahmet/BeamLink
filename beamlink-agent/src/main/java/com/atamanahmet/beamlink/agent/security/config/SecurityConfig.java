@@ -18,6 +18,33 @@ public class SecurityConfig {
 
     private final AgentUiTokenFilter agentUiTokenFilter;
 
+    private static final String[] PUBLIC_ASSETS = {
+            "/", "/index.html", "/assets/**", "/static/**", "/favicon.ico", "/error"
+    };
+
+    private static final String[] PUBLIC_AUTH = {
+            "/api/auth/login", "/api/auth/logout", "/api/auth/me"
+    };
+
+    private static final String[] AGENT_TO_AGENT = {
+            "/api/ping",
+            "/api/upload/check",
+            "/api/upload",
+            "/api/update/receive",
+            "/api/transfers/receive",
+            "/api/transfers/*/chunk",
+            "/api/transfers/*/offset",
+            "/api/transfers/*/resume"
+    };
+
+    private static final String[] NEXUS_FACING = {
+            "/api/approval",
+            "/api/agents/register",
+            "/api/agents/status",
+            "/api/agents/check-approval",
+            "/api/agent/events"
+    };
+
     @Bean
     public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
         http
@@ -26,28 +53,10 @@ public class SecurityConfig {
                 .sessionManagement(s -> s.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .addFilterBefore(agentUiTokenFilter, UsernamePasswordAuthenticationFilter.class)
                 .authorizeHttpRequests(auth -> auth
-                        .requestMatchers(
-                                "/",
-                                "/index.html",
-                                "/assets/**",
-                                "/static/**",
-                                "/favicon.ico",
-                                "/error"
-                        ).permitAll()
-                        .requestMatchers(
-                                "/api/auth/login",
-                                "/api/auth/logout",
-                                "/api/auth/me",
-                                "/api/approval",
-                                "/api/agents/register",
-                                "/api/agents/status",
-                                "/api/agents/check-approval",
-                                "/api/upload/check",
-                                "/api/upload",
-                                "/api/update/receive",
-                                "/api/ping",
-                                "/api/agent/events"
-                        ).permitAll()
+                        .requestMatchers(PUBLIC_ASSETS).permitAll()
+                        .requestMatchers(PUBLIC_AUTH).permitAll()
+                        .requestMatchers(AGENT_TO_AGENT).permitAll()
+                        .requestMatchers(NEXUS_FACING).permitAll()
                         .anyRequest().authenticated()
                 )
                 .httpBasic(AbstractHttpConfigurer::disable)

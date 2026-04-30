@@ -1,5 +1,5 @@
 server:
-  port: ${AGENT_PORT}
+  port: ${AGENT_PORT:9090}
   address: 0.0.0.0
   tomcat:
     max-http-form-post-size: -1
@@ -8,16 +8,20 @@ server:
 agent:
   ip-address: ${AGENT_IP:auto}
   nexus:
-    url: ${AGENT_NEXUS_URL}
-  name: ${AGENT_NAME}
+    url: ${AGENT_NEXUS_URL:http://localhost:7472}
+  name: ${AGENT_NAME:beamlink-agent}
   upload:
     directory: ./data/uploads
+    partial-directory: ./data/partial
+  transfer:
+    expiry-hours: ${TRANSFER_EXPIRY_HOURS:24}
   heartbeat:
     interval: 30000
   ui:
-    username: ${AGENT_UI_USERNAME}
-    password: ${AGENT_UI_PASSWORD}
-    jwt-secret: ${AGENT_JWT_SECRET}
+    username: ${AGENT_UI_USERNAME:agent}
+    password: ${AGENT_UI_PASSWORD:agent}
+    jwt-secret: ${AGENT_JWT_SECRET:auto}
+
 
 logging:
   file:
@@ -26,12 +30,23 @@ logging:
 spring:
   application:
     name: beamlink-agent
+  datasource:
+    url: jdbc:sqlite:./data/database/beamlink-agent.db
+    driver-class-name: org.sqlite.JDBC
+  jpa:
+    database-platform: org.hibernate.community.dialect.SQLiteDialect
+    hibernate:
+      ddl-auto: update
+    show-sql: false
+    properties:
+      hibernate:
+        format_sql: false
   servlet:
     multipart:
-      enabled: ${MULTIPART_ENABLED}
-      max-file-size: ${MULTIPART_MAX_FILE_SIZE}
-      max-request-size: ${MULTIPART_MAX_REQUEST_SIZE}
-      file-size-threshold: ${MULTIPART_FILE_SIZE_THRESHOLD}
+      enabled: ${MULTIPART_ENABLED:false}
+      max-file-size: ${MULTIPART_MAX_FILE_SIZE:-1}
+      max-request-size: ${MULTIPART_MAX_REQUEST_SIZE:-1}
+      file-size-threshold: ${MULTIPART_FILE_SIZE_THRESHOLD:0}
   web:
     resources:
       static-locations: file:./static/,classpath:/static/
