@@ -11,10 +11,10 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
- * Dashboard statistics
+ * Dashboard statistics, Admin accessible info only
  */
 @RestController
-@RequestMapping("/api/nexus/dashboard")
+@RequestMapping("/api/nexus/admin/dashboard")
 @RequiredArgsConstructor
 public class DashboardController {
 

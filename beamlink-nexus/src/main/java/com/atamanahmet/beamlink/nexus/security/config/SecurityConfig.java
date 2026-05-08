@@ -1,5 +1,7 @@
 package com.atamanahmet.beamlink.nexus.security.config;
 
+import com.atamanahmet.beamlink.nexus.repository.AgentRepository;
+import com.atamanahmet.beamlink.nexus.security.AgentTokenService;
 import com.atamanahmet.beamlink.nexus.security.DynamicCorsFilter;
 import com.atamanahmet.beamlink.nexus.security.filter.AgentTokenFilter;
 import com.atamanahmet.beamlink.nexus.security.enums.Role;
@@ -22,11 +24,7 @@ import org.springframework.security.web.authentication.UsernamePasswordAuthentic
 
 @Configuration
 @EnableWebSecurity
-@RequiredArgsConstructor
 public class SecurityConfig {
-
-    private final AgentTokenFilter agentTokenFilter;
-    private final DynamicCorsFilter dynamicCorsFilter;
 
     @Value("${nexus.admin.username}")
     private String adminUsername;
@@ -38,11 +36,6 @@ public class SecurityConfig {
     private static final String AGENT = Role.AGENT.name();
     private static final String AGENT_PUBLIC = Role.AGENT_PUBLIC.name();
 
-    private static final String[] AGENT_TO_AGENT = {
-            "/api/nexus/transfers/receive",
-            "/api/nexus/transfers/*/chunk",
-            "/api/nexus/transfers/*/offset"
-    };
 
     private static final String[] UNAUTHED_AGENT = {
             "/api/agents/register",
@@ -71,7 +64,7 @@ public class SecurityConfig {
     };
 
     @Bean
-    public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
+    public SecurityFilterChain filterChain(HttpSecurity http, AgentTokenFilter agentTokenFilter, DynamicCorsFilter dynamicCorsFilter) throws Exception {
         http
                 .csrf(AbstractHttpConfigurer::disable)
                 .headers(headers -> headers.frameOptions(HeadersConfigurer.FrameOptionsConfig::sameOrigin))
@@ -82,12 +75,12 @@ public class SecurityConfig {
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers(PUBLIC_ASSETS).permitAll()
                         .requestMatchers(UNAUTHED_AGENT).permitAll()
-                        .requestMatchers(AGENT_TO_AGENT).permitAll()
                         .requestMatchers("/api/nexus/auth/login").permitAll()
                         .requestMatchers(UPLOAD).hasAnyRole(AGENT, AGENT_PUBLIC)
                         .requestMatchers("/api/nexus/peers/**").hasAnyRole(AGENT, AGENT_PUBLIC, ADMIN)
                         .requestMatchers("/api/nexus/auth/identity").hasAnyRole(AGENT, ADMIN)
-                        .requestMatchers("/api/nexus/**").hasRole(ADMIN)
+                        .requestMatchers("/api/nexus/admin/**").hasRole(ADMIN)
+                        .requestMatchers("/api/nexus/agent/**").hasAnyRole(AGENT, AGENT_PUBLIC)
                         .anyRequest().authenticated()
                 )
                 .httpBasic(AbstractHttpConfigurer::disable)

@@ -12,7 +12,6 @@ import java.util.concurrent.ConcurrentHashMap;
 @Component
 public class DynamicCorsRegistry {
 
-    // Always-allowed origins (admin dashboard, dev)
     private final Set<String> allowedOrigins = ConcurrentHashMap.newKeySet();
 
     public DynamicCorsRegistry(@Value("${nexus.cors.static-origins:}") String staticOrigins) {

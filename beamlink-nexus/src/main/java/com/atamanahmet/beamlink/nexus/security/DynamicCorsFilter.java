@@ -13,7 +13,6 @@ import org.springframework.web.filter.OncePerRequestFilter;
 import java.io.IOException;
 
 @Component
-@Order(Ordered.HIGHEST_PRECEDENCE)
 @RequiredArgsConstructor
 public class DynamicCorsFilter extends OncePerRequestFilter {
 

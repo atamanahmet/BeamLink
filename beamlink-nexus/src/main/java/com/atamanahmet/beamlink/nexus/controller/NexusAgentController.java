@@ -14,7 +14,7 @@ import java.util.List;
 import java.util.UUID;
 
 @RestController
-@RequestMapping("/api/nexus/agents")
+@RequestMapping("/api/nexus/admin/agents")
 @RequiredArgsConstructor
 public class NexusAgentController {
 
@@ -51,13 +51,13 @@ public class NexusAgentController {
     }
 
     @GetMapping("/rename-pending")
-    public ResponseEntity<List<Agent>> getRenamePendings() {
+    public ResponseEntity<List<Agent>> getRenamePendingAll() {
 
-        List<Agent> renamePendings = agentService.getPendingRenames();
+        List<Agent> renamePendingAll = agentService.getPendingRenames();
 
         return ResponseEntity
                 .status(HttpStatus.OK)
-                .body(renamePendings);
+                .body(renamePendingAll);
     }
 
     @PostMapping("/{id}/approve")

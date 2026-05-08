@@ -2,6 +2,7 @@ package com.atamanahmet.beamlink.nexus.controller;
 
 import com.atamanahmet.beamlink.nexus.service.UpdateService;
 import lombok.RequiredArgsConstructor;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 
 import org.springframework.web.bind.annotation.PathVariable;
@@ -14,7 +15,7 @@ import org.springframework.web.multipart.MultipartFile;
 import java.util.UUID;
 
 @RestController
-@RequestMapping("/api/nexus/update")
+@RequestMapping("/api/nexus/admin/update")
 @RequiredArgsConstructor
 public class NexusUpdateController {
 
@@ -22,19 +23,29 @@ public class NexusUpdateController {
 
     @PostMapping("/upload")
     public ResponseEntity<Void> upload(@RequestParam("file") MultipartFile file) {
+
         updateService.storePackage(file);
-        return ResponseEntity.ok().build();
+
+        return ResponseEntity
+                .status(HttpStatus.OK)
+                .build();
     }
 
     @PostMapping("/push/{agentId}")
     public ResponseEntity<Void> pushToOne(@PathVariable UUID agentId) {
         updateService.pushToAgent(agentId);
-        return ResponseEntity.ok().build();
+
+        return ResponseEntity
+                .status(HttpStatus.OK)
+                .build();
     }
 
     @PostMapping("/push-all")
     public ResponseEntity<Void> pushToAll() {
         updateService.pushToAllOnline();
-        return ResponseEntity.ok().build();
+
+        return ResponseEntity
+                .status(HttpStatus.OK)
+                .build();
     }
 }

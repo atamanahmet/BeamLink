@@ -74,7 +74,7 @@ public class AuthController {
     }
 
     /**
-     * Returns Nexus public identity for agent's peerlist
+     * Returns Nexus public identity for agent's peer list
      */
     @GetMapping("/identity")
     public ResponseEntity<Map<String, Object>> getNexusIdentity() {

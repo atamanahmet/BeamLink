@@ -52,18 +52,6 @@ public class AgentController {
         }
 
         /**
-         * Agent rename request
-         */
-        @PostMapping("/{id}/rename")
-        public ResponseEntity<Void> requestRename(
-                @PathVariable UUID id,
-                @RequestBody AgentRenameRequest request) {
-
-                agentService.requestRename(id, request.getName());
-                return ResponseEntity.ok().build();
-        }
-
-        /**
          * Checks if agent still exists in DB.
          * Used by agent on startup to detect DB resets.
          */
