@@ -9,9 +9,9 @@ import java.util.UUID;
 @Getter
 @Setter
 @NoArgsConstructor
-public class InitiateTransferRequest {
-    private String filePath;
-    private UUID targetAgentId;
-    private String targetIp;
-    private int targetPort;
+public class PrepareReceiveRequest {
+    private UUID transferId;
+    private UUID sourceAgentId;
+    private String fileName;
+    private long fileSize;
 }

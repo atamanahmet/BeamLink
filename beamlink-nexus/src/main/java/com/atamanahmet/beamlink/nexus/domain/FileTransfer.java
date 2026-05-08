@@ -20,6 +20,12 @@ public class FileTransfer {
     @Column(nullable = false, updatable = false, columnDefinition = "VARCHAR(36)")
     private UUID transferId;
 
+    @Column(columnDefinition = "VARCHAR(36)")
+    private UUID directoryTransferId;
+
+    @Column(columnDefinition = "VARCHAR(36)")
+    private UUID batchTransferId;
+
     @Column(nullable = false, columnDefinition = "VARCHAR(36)")
     private UUID sourceAgentId;
 
@@ -39,6 +45,14 @@ public class FileTransfer {
 
     @Column(nullable = false)
     private long fileSize;
+
+    /* relative path from directory root, only set for directory transfer children */
+    @Column
+    private String relativePath;
+
+    /* root folder name from source, used to reconstruct directory structure on receiver */
+    @Column
+    private String directoryName;
 
     @Column(nullable = false)
     private long confirmedOffset;   // bytes written to disk on target

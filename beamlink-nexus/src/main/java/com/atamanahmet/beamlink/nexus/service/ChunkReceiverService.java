@@ -1,10 +1,17 @@
 package com.atamanahmet.beamlink.nexus.service;
 
 import com.atamanahmet.beamlink.nexus.config.NexusConfig;
+import com.atamanahmet.beamlink.nexus.domain.BatchTransfer;
+import com.atamanahmet.beamlink.nexus.domain.DirectoryTransfer;
 import com.atamanahmet.beamlink.nexus.domain.FileTransfer;
+import com.atamanahmet.beamlink.nexus.domain.enums.GroupTransferStatus;
 import com.atamanahmet.beamlink.nexus.domain.enums.TransferStatus;
 import com.atamanahmet.beamlink.nexus.dto.ChunkAckResponse;
+import com.atamanahmet.beamlink.nexus.dto.ReceiveBatchRequest;
+import com.atamanahmet.beamlink.nexus.dto.ReceiveDirectoryRequest;
 import com.atamanahmet.beamlink.nexus.exception.FileTransferException;
+import com.atamanahmet.beamlink.nexus.repository.BatchTransferRepository;
+import com.atamanahmet.beamlink.nexus.repository.DirectoryTransferRepository;
 import com.atamanahmet.beamlink.nexus.repository.FileTransferRepository;
 import com.atamanahmet.beamlink.nexus.util.PathNormalizer;
 import lombok.RequiredArgsConstructor;
@@ -20,6 +27,9 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.time.Instant;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
 import java.util.UUID;
 
 @Service
@@ -33,6 +43,8 @@ public class ChunkReceiverService {
     private final NexusConfig nexusConfig;
     private final TransferLogService transferLogService;
     private final AgentService agentService;
+    private final DirectoryTransferRepository directoryTransferRepository;
+    private final BatchTransferRepository batchTransferRepository;
 
     /**
      * Called by target agent when source initiates a transfer.
@@ -62,6 +74,126 @@ public class ChunkReceiverService {
 
         transferRepository.save(transfer);
         log.info("Prepared to receive: {} ({} bytes)", transfer.getFileName(), transfer.getFileSize());
+    }
+
+    /**
+     * Called by target when source registers a directory transfer.
+     * Creates DirectoryTransfer record, empty dirs on disk,
+     * allocates partial files, saves all in one batch.
+     */
+    @Transactional
+    public void prepareReceiveDirectory(ReceiveDirectoryRequest request) {
+        DirectoryTransfer dt = DirectoryTransfer.initiate(
+                request.getDirectoryTransferId(),
+                request.getSourceAgentId(),
+                null,   // targetAgentId unknown on receiver side
+                null,               //targetIp, this is the target
+                0,                  // targetPort, this is the target
+                request.getDirectoryName(),
+                null,          // sourcePath is unknown on receiver side
+                request.getTotalFiles(),
+                request.getTotalSize(),
+                request.getEmptyDirectories() != null
+                        ? request.getEmptyDirectories()
+                        : Collections.emptyList()
+        );
+        dt.setStatus(GroupTransferStatus.ACTIVE);
+        directoryTransferRepository.save(dt);
+
+        /* create empty directories before any file chunks arrive */
+        Path uploadsDir = Paths.get(nexusConfig.getUploadDirectory());
+        Path dirRoot = uploadsDir.resolve(request.getDirectoryName());
+
+        for (String emptyDir : dt.getEmptyDirectories()) {
+            try {
+                Files.createDirectories(dirRoot.resolve(emptyDir));
+            } catch (IOException e) {
+                throw new FileTransferException(
+                        "Failed to create empty directory: " + emptyDir, e);
+            }
+        }
+
+        /* build and allocate all child file transfers */
+        List<FileTransfer> fileTransfers = new ArrayList<>();
+
+        for (ReceiveDirectoryRequest.FileEntry entry : request.getFiles()) {
+            if (entry.getFileSize() <= 0) {
+                throw new FileTransferException(
+                        "Invalid file size for: " + entry.getFileName(), null);
+            }
+
+            FileTransfer ft = FileTransfer.initiate(
+                    entry.getTransferId(),
+                    request.getSourceAgentId(),
+                    null,
+                    entry.getFileName(),
+                    null,
+                    entry.getFileSize()
+            );
+            ft.setDirectoryTransferId(request.getDirectoryTransferId());
+            ft.setRelativePath(entry.getRelativePath());
+            ft.setDirectoryName(request.getDirectoryName());
+            ft.setStatus(TransferStatus.ACTIVE);
+
+            Path partialFile = resolvePartialPath(entry.getFileName());
+            allocatePartialFile(partialFile, entry.getFileSize());
+
+            fileTransfers.add(ft);
+        }
+
+        transferRepository.saveAll(fileTransfers);
+
+        log.info("Prepared to receive directory: {} ({} files)",
+                request.getDirectoryName(), fileTransfers.size());
+    }
+
+    /**
+     * Called by target when source registers a batch transfer.
+     * Creates BatchTransfer record, allocates partial files, saves all in one batch.
+     */
+    @Transactional
+    public void prepareReceiveBatch(ReceiveBatchRequest request) {
+        BatchTransfer bt = BatchTransfer.initiate(
+                request.getBatchTransferId(),
+                request.getSourceAgentId(),
+                null,          /* targetAgentId unknown on receiver side */
+                null,          /* targetIp — this is the target */
+                0,             /* targetPort — this is the target */
+                request.getTotalFiles(),
+                request.getTotalSize()
+        );
+        bt.setStatus(GroupTransferStatus.ACTIVE);
+        batchTransferRepository.save(bt);
+
+        List<FileTransfer> fileTransfers = new ArrayList<>();
+
+        for (ReceiveBatchRequest.FileEntry entry : request.getFiles()) {
+            if (entry.getFileSize() <= 0) {
+                throw new FileTransferException(
+                        "Invalid file size for: " + entry.getFileName(), null);
+            }
+
+            FileTransfer ft = FileTransfer.initiate(
+                    entry.getTransferId(),
+                    request.getSourceAgentId(),
+                    null,
+                    entry.getFileName(),
+                    null,
+                    entry.getFileSize()
+            );
+            ft.setBatchTransferId(request.getBatchTransferId());
+            ft.setStatus(TransferStatus.ACTIVE);
+
+            Path partialFile = resolvePartialPath(entry.getFileName());
+            allocatePartialFile(partialFile, entry.getFileSize());
+
+            fileTransfers.add(ft);
+        }
+
+        transferRepository.saveAll(fileTransfers);
+
+        log.info("Prepared to receive batch: {} ({} files)",
+                request.getBatchTransferId(), fileTransfers.size());
     }
 
     /**
@@ -177,5 +309,30 @@ public class ChunkReceiverService {
         } catch (IOException e) {
             log.warn("Could not delete partial file for: {}", fileName);
         }
+    }
+
+    /**
+     * Allocates the partial file on disk at exact size, no data written yet
+     */
+    private void allocatePartialFile(Path partialFile, long fileSize) {
+        try {
+            Files.createDirectories(partialFile.getParent());
+            try (RandomAccessFile raf = new RandomAccessFile(partialFile.toFile(), "rw")) {
+                raf.setLength(fileSize);
+            }
+        } catch (IOException e) {
+            throw new FileTransferException(
+                    "Failed to allocate partial file: " + partialFile, e);
+        }
+    }
+
+    /**
+     * Returns the confirmed offset for an in-progress receive, used by the offset endpoint
+     */
+    public long getConfirmedOffset(UUID transferId) {
+        return transferRepository.findByTransferId(transferId)
+                .orElseThrow(() -> new FileTransferException(
+                        "Transfer not found: " + transferId, null))
+                .getConfirmedOffset();
     }
 }
