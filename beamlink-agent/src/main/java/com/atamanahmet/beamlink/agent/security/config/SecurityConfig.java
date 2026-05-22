@@ -1,6 +1,7 @@
 package com.atamanahmet.beamlink.agent.security.config;
 
 import com.atamanahmet.beamlink.agent.security.AgentUiTokenFilter;
+import com.atamanahmet.beamlink.agent.security.filter.PeerTokenFilter;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -8,8 +9,13 @@ import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
 import org.springframework.security.config.annotation.web.configurers.AbstractHttpConfigurer;
 import org.springframework.security.config.http.SessionCreationPolicy;
+import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
+import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
+import org.springframework.web.cors.CorsConfiguration;
+import org.springframework.web.cors.CorsConfigurationSource;
+import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 
 @Configuration
 @EnableWebSecurity
@@ -17,24 +23,18 @@ import org.springframework.security.web.authentication.UsernamePasswordAuthentic
 public class SecurityConfig {
 
     private final AgentUiTokenFilter agentUiTokenFilter;
+    private final PeerTokenFilter peerTokenFilter;
 
     private static final String[] PUBLIC_ASSETS = {
             "/", "/index.html", "/assets/**", "/static/**", "/favicon.ico", "/error"
     };
 
     private static final String[] PUBLIC_AUTH = {
-            "/api/auth/login", "/api/auth/logout", "/api/auth/me"
-    };
-
-    private static final String[] AGENT_TO_AGENT = {
-            "/api/ping",
-            "/api/upload/check",
-            "/api/upload",
-            "/api/update/receive",
-            "/api/transfers/receive",
-            "/api/transfers/*/chunk",
-            "/api/transfers/*/offset",
-            "/api/transfers/*/resume"
+            "/api/agent/auth/login",
+            "/api/agent/auth/logout",
+            "/api/agent/auth/me",
+            "/api/agent/auth/status",
+            "/api/agent/auth/register"
     };
 
     private static final String[] NEXUS_FACING = {
@@ -49,19 +49,32 @@ public class SecurityConfig {
     public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
         http
                 .csrf(AbstractHttpConfigurer::disable)
-                .cors(AbstractHttpConfigurer::disable)
                 .sessionManagement(s -> s.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .addFilterBefore(agentUiTokenFilter, UsernamePasswordAuthenticationFilter.class)
+                .addFilterBefore(peerTokenFilter, UsernamePasswordAuthenticationFilter.class)
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers(PUBLIC_ASSETS).permitAll()
                         .requestMatchers(PUBLIC_AUTH).permitAll()
-                        .requestMatchers(AGENT_TO_AGENT).permitAll()
                         .requestMatchers(NEXUS_FACING).permitAll()
+                        .requestMatchers("/actuator/health").permitAll()
                         .anyRequest().authenticated()
                 )
-                .httpBasic(AbstractHttpConfigurer::disable)
+                .cors(cors -> cors.configurationSource(corsConfigurationSource()))
                 .formLogin(AbstractHttpConfigurer::disable);
 
         return http.build();
+    }
+
+    @Bean
+    public CorsConfigurationSource corsConfigurationSource() {
+        CorsConfiguration config = new CorsConfiguration();
+        config.addAllowedOriginPattern("*");
+        config.addAllowedMethod("*");
+        config.addAllowedHeader("*");
+
+        UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
+        source.registerCorsConfiguration("/api/agent/**", config);
+        source.registerCorsConfiguration("/api/transfers/**", config);
+        return source;
     }
 }
