@@ -5,14 +5,46 @@ server:
     max-http-form-post-size: -1
     max-swallow-size: -1
 
+spring:
+  application:
+    name: beamlink-agent
+  config:
+    import: optional:file:../config/.env[.properties]
+  datasource:
+    url: "jdbc:sqlite:${beamlink.runtime.dir}/data/database/agent.db?journal_mode=WAL&busy_timeout=3000&foreign_keys=on"
+    driver-class-name: org.sqlite.JDBC
+    hikari:
+      maximum-pool-size: 1
+      minimum-idle: 1
+  jpa:
+    database-platform: org.hibernate.community.dialect.SQLiteDialect
+    hibernate:
+      ddl-auto: update
+    show-sql: false
+    properties:
+      hibernate:
+        format_sql: false
+    open-in-view: false
+  servlet:
+    multipart:
+      enabled: ${MULTIPART_ENABLED:false}
+      max-file-size: ${MULTIPART_MAX_FILE_SIZE:-1}
+      max-request-size: ${MULTIPART_MAX_REQUEST_SIZE:-1}
+      file-size-threshold: ${MULTIPART_FILE_SIZE_THRESHOLD:0}
+  web:
+    resources:
+      static-locations: file:./static/,classpath:/static/
+
 agent:
   ip-address: ${AGENT_IP:auto}
-  nexus:
-    url: ${AGENT_NEXUS_URL:http://localhost:7472}
   name: ${AGENT_NAME:beamlink-agent}
+  data:
+    directory: ${beamlink.runtime.dir}
+  update:
+    storage-path: ${beamlink.runtime.dir}/data/update-package
   upload:
-    directory: ./data/uploads
-    partial-directory: ./data/partial
+    directory: ${beamlink.runtime.dir}/data/uploads
+    temp-directory: ${beamlink.runtime.dir}/data/temp
   transfer:
     expiry-hours: ${TRANSFER_EXPIRY_HOURS:24}
   heartbeat:
@@ -24,31 +56,6 @@ agent:
   auto-resume-transfer: false
   auto-resume-group-transfers: false
 
-
 logging:
   file:
-    name: ./logs/agent.log
-
-spring:
-  application:
-    name: beamlink-agent
-  datasource:
-    url: jdbc:sqlite:./data/database/beamlink-agent.db
-    driver-class-name: org.sqlite.JDBC
-  jpa:
-    database-platform: org.hibernate.community.dialect.SQLiteDialect
-    hibernate:
-      ddl-auto: update
-    show-sql: false
-    properties:
-      hibernate:
-        format_sql: false
-  servlet:
-    multipart:
-      enabled: ${MULTIPART_ENABLED:false}
-      max-file-size: ${MULTIPART_MAX_FILE_SIZE:-1}
-      max-request-size: ${MULTIPART_MAX_REQUEST_SIZE:-1}
-      file-size-threshold: ${MULTIPART_FILE_SIZE_THRESHOLD:0}
-  web:
-    resources:
-      static-locations: file:./static/,classpath:/static/
+    name: ${beamlink.runtime.dir}/logs/agent.log

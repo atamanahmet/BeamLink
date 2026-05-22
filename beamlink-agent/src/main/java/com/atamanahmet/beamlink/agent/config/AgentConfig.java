@@ -2,55 +2,54 @@ package com.atamanahmet.beamlink.agent.config;
 
 import lombok.Getter;
 
+import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
-import jakarta.annotation.PostConstruct;
-
-import java.io.File;
 import java.net.http.HttpClient;
-
+import java.time.Duration;
 
 /**
  * Configuration class for agent settings
  */
 @Configuration
 @Getter
+@RequiredArgsConstructor
 public class AgentConfig {
 
-    @Value("${agent.nexus.url}")
-    private String nexusUrl;
-
-    @Value("${agent.upload.directory}")
-    private String uploadDirectory;
-
-    @Value("${agent.upload.partial-directory:./data/partial}")
-    private String partialDirectory;
+    private final AgentNetworkConfig networkConfig;
 
     @Value("${server.port}")
-    private int port;
+    private int agentPort;
 
     @Value("${agent.ip-address}")
-    private String ipAddress;
+    private String configuredIp;
 
-    @Value("${agent.transfer.expiry-hours}")
+    @Value("${agent.ui.username}")
+    private String agentUsername;
+
+    @Value("${agent.ui.password}")
+    private String agentPassword;
+
+    @Value("${agent.transfer.expiry-hours:24}")
     private long transferExpiryHours;
 
     @Value("${agent.auto-resume-group-transfers:false}")
     private boolean autoResumeGroupTransfers;
 
-    @PostConstruct
-    public void init() {
+    /** Returns configured IP or auto-resolves if set to auto */
+    public String getIp() {
+        return "auto".equalsIgnoreCase(configuredIp)
+                ? networkConfig.getResolvedIp()
+                : configuredIp;
+    }
 
-        // Create upload directory if it doesn't exist
-        File uploadDir = new File(uploadDirectory);
-        if (!uploadDir.exists()) {
-            uploadDir.mkdirs();
-        }
-        new File(uploadDirectory).mkdirs();
-        new File(partialDirectory).mkdirs();
-        new File("./data/database").mkdirs();
+    @Bean
+    public HttpClient httpClient() {
+        return HttpClient.newBuilder()
+                .connectTimeout(Duration.ofSeconds(10))
+                .build();
     }
 
 }
