@@ -1,41 +1,41 @@
 package com.atamanahmet.beamlink.agent.domain;
 
-import com.fasterxml.jackson.annotation.JsonAlias;
-import com.fasterxml.jackson.annotation.JsonProperty;
-import lombok.AllArgsConstructor;
-import lombok.Getter;
-import lombok.NoArgsConstructor;
-import lombok.Setter;
+import jakarta.persistence.*;
+import lombok.*;
 
 import java.util.UUID;
 
-/**
- * Peer representation (for peer list)
- */
+@Entity
+@Table(name = "peers")
 @Getter
 @Setter
 @NoArgsConstructor
 @AllArgsConstructor
+@Builder
 public class Peer {
 
-    @JsonAlias("id")
+    @Id
+    @Column(nullable = false, updatable = false)
     private UUID agentId;
 
+    @Column(nullable = false)
     private String agentName;
 
+    @Column(nullable = false)
     private String ipAddress;
 
+    @Column(nullable = false)
     private int port;
 
-    private long lastSeen = System.currentTimeMillis();
+    @Column(nullable = false)
+    private long lastSeen;
 
+    @Column(nullable = false)
     private boolean online;
 
-    private String publicToken;
-
+    private UUID publicId;
 
     public String getAddress() {
         return ipAddress + ":" + port;
     }
-
 }

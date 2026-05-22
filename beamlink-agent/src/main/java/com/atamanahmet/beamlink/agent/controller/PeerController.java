@@ -16,7 +16,7 @@ import lombok.RequiredArgsConstructor;
  * Provides peer list for UI
  */
 @RestController
-@RequestMapping("/api/peers")
+@RequestMapping("/api/agent/peers")
 @RequiredArgsConstructor
 public class PeerController {
 

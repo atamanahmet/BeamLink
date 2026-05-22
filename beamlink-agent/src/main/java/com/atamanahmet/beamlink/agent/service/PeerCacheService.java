@@ -1,11 +1,11 @@
 package com.atamanahmet.beamlink.agent.service;
 
-import com.atamanahmet.beamlink.agent.config.AgentConfig;
 import com.atamanahmet.beamlink.agent.domain.Peer;
-import com.atamanahmet.beamlink.agent.domain.PeerCache;
+import com.atamanahmet.beamlink.agent.dto.PeerDTO;
 import com.atamanahmet.beamlink.agent.dto.PeerListResponse;
 import com.atamanahmet.beamlink.agent.dto.PeerStatusUpdate;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import com.atamanahmet.beamlink.agent.mapper.PeerMapper;
+import com.atamanahmet.beamlink.agent.repository.PeerRepository;
 import lombok.Getter;
 import lombok.RequiredArgsConstructor;
 import org.slf4j.Logger;
@@ -16,11 +16,10 @@ import org.springframework.web.reactive.function.client.WebClientResponseExcepti
 import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Schedulers;
 
-import java.io.File;
-import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
@@ -28,21 +27,20 @@ public class PeerCacheService {
 
     private final Logger log = LoggerFactory.getLogger(PeerCacheService.class);
 
-    private final AgentConfig config;
-    private final ObjectMapper objectMapper;
     private final WebClient nexusWebClient;
+    private final PeerRepository peerRepository;
 
-    private static final String CACHE_FILE = "peers_cache.json";
     private volatile boolean initialPeersReceived = false;
 
     @Getter
     private long currentPeerListVersion = 0L;
 
+    /** In-memory cache, always in sync with DB after any write. */
     private List<Peer> cachedPeers = new ArrayList<>();
 
     public List<Peer> getAllPeers(UUID agentId, String publicToken) {
         if (cachedPeers.isEmpty()) refreshPeersFromNexus(agentId, publicToken);
-        if (cachedPeers.isEmpty()) loadFromCache();
+        if (cachedPeers.isEmpty()) loadFromDb();
         return new ArrayList<>(cachedPeers);
     }
 
@@ -60,13 +58,13 @@ public class PeerCacheService {
 
         if (agentId == null) {
             log.info("No agent ID yet. Skipping peer refresh.");
-            loadFromCache();
+            loadFromDb();
             return;
         }
 
         if (publicToken == null || publicToken.isBlank()) {
             log.warn("No public token available. Skipping peer refresh.");
-            loadFromCache();
+            loadFromDb();
             return;
         }
 
@@ -82,9 +80,7 @@ public class PeerCacheService {
                     .onErrorResume(WebClientResponseException.class, ex -> {
                         int status = ex.getStatusCode().value();
                         if (status == 401 || status == 403) {
-
-                            log.warn("Peer fetch rejected [{}], token may not be active yet. " +
-                                    "only WS peer update for now.", status);
+                            log.warn("Peer fetch rejected [{}], token may not be active yet.", status);
                         } else {
                             log.error("Peer fetch failed [{}]: {}", status, ex.getMessage());
                         }
@@ -98,17 +94,20 @@ public class PeerCacheService {
                     .block();
 
             if (response == null) {
-                log.debug("No peer response received. Loading from local cache.");
-                loadFromCache();
+                log.debug("No peer response received. Loading from DB.");
+                loadFromDb();
                 return;
             }
 
-            cachedPeers = response.getPeers() != null ? response.getPeers() : new ArrayList<>();
+            cachedPeers = response.getPeers() != null
+                    ? response.getPeers().stream()
+                    .map(PeerMapper::toEntity)
+                    .collect(Collectors.toCollection(ArrayList::new))
+                    : new ArrayList<>();
             currentPeerListVersion = response.getVersion();
-            saveToCache();
+            saveToDb();
 
-            log.info("Refreshed peer list: {} peers (version: {})",
-                    cachedPeers.size(), currentPeerListVersion);
+            log.info("Refreshed peer list: {} peers (version: {})", cachedPeers.size(), currentPeerListVersion);
 
         } catch (Exception e) {
             log.error("Could not refresh from nexus: {}", e.getMessage());
@@ -116,13 +115,14 @@ public class PeerCacheService {
         }
     }
 
-    public void updatePeers(List<Peer> peers, long version) {
-        cachedPeers = new ArrayList<>(peers);
+    public void updatePeers(List<PeerDTO> peers, long version) {
+        cachedPeers = peers.stream()
+                .map(PeerMapper::toEntity)
+                .collect(Collectors.toCollection(ArrayList::new));
         currentPeerListVersion = version;
         initialPeersReceived = true;
-        saveToCache();
-        log.info("Peer list updated via WS: {} peers (version: {})",
-                cachedPeers.size(), currentPeerListVersion);
+        saveToDb();
+        log.info("Peer list updated via WS: {} peers (version: {})", cachedPeers.size(), currentPeerListVersion);
     }
 
     public void updatePeerStatuses(List<PeerStatusUpdate> agentStatuses) {
@@ -135,36 +135,49 @@ public class PeerCacheService {
         }
     }
 
+    public void addOrUpdatePeer(PeerDTO incoming) {
+        Peer peer = PeerMapper.toEntity(incoming);
+        boolean found = false;
+        for (int i = 0; i < cachedPeers.size(); i++) {
+            if (cachedPeers.get(i).getAgentId().equals(peer.getAgentId())) {
+                cachedPeers.set(i, peer);
+                found = true;
+                break;
+            }
+        }
+        if (!found) cachedPeers.add(peer);
+        saveToDb();
+        log.info("Peer added/updated: {} ({})", peer.getAgentName(), peer.getAgentId());
+    }
+
+    public void markOffline(UUID agentId) {
+        cachedPeers.stream()
+                .filter(p -> p.getAgentId().equals(agentId))
+                .findFirst()
+                .ifPresent(p -> {
+                    p.setOnline(false);
+                    saveToDb();
+                    log.info("Peer {} marked offline", agentId);
+                });
+    }
+
     public void clearCache() {
         cachedPeers.clear();
-        log.info("Peer cache cleared");
+        peerRepository.deleteAll();
+        log.info("Peer cache cleared.");
     }
 
-    private void loadFromCache() {
-        File cacheFile = new File(CACHE_FILE);
-        if (!cacheFile.exists()) return;
-
-        try {
-            PeerCache cache = objectMapper.readValue(cacheFile, PeerCache.class);
-            cachedPeers = cache.getPeers() != null ? cache.getPeers() : new ArrayList<>();
-            currentPeerListVersion = cache.getVersion();
-            log.info("Loaded {} peers from cache (version: {})",
-                    cachedPeers.size(), currentPeerListVersion);
-        } catch (IOException e) {
-            log.error("Error loading peer cache: {}", e.getMessage());
-            cachedPeers = new ArrayList<>();
-            currentPeerListVersion = 0;
-        }
+    /** Loads peers from DB into in-memory cache on startup or fallback. */
+    private void loadFromDb() {
+        cachedPeers = new ArrayList<>(peerRepository.findAll());
+        log.info("Loaded {} peers from DB.", cachedPeers.size());
     }
 
-    private void saveToCache() {
-        try {
-            PeerCache cache = new PeerCache();
-            cache.setPeers(cachedPeers);
-            cache.setVersion(currentPeerListVersion);
-            objectMapper.writeValue(new File(CACHE_FILE), cache);
-        } catch (IOException e) {
-            log.error("Error saving peer cache: {}", e.getMessage());
-        }
+    /**
+     * Full replacement, peer list is always comes from Nexus.
+     */
+    private void saveToDb() {
+        peerRepository.deleteAll();
+        peerRepository.saveAll(cachedPeers);
     }
 }
