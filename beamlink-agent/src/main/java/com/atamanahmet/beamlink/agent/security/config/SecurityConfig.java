@@ -39,9 +39,9 @@ public class SecurityConfig {
 
     private static final String[] NEXUS_FACING = {
             "/api/approval",
-            "/api/agents/register",
-            "/api/agents/status",
-            "/api/agents/check-approval",
+            "/api/agent/register",
+            "/api/agent/status",
+            "/api/agent/check-approval",
             "/api/agent/events"
     };
 
