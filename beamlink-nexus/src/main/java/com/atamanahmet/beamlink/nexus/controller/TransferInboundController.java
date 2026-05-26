@@ -19,11 +19,11 @@ import java.util.Map;
 import java.util.UUID;
 
 @RestController
-@RequestMapping("/api/nexus/agent/transfers")
+@RequestMapping("/api/transfers")
 @RequiredArgsConstructor
-public class AgentTransferController {
+public class TransferInboundController {
 
-    private static final Logger log = LoggerFactory.getLogger(AgentTransferController.class);
+    private static final Logger log = LoggerFactory.getLogger(TransferInboundController.class);
 
     private final ChunkReceiverService receiverService;
     private final TransferSenderService senderService;
