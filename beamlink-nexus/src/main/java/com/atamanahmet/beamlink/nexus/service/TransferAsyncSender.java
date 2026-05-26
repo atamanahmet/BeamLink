@@ -9,8 +9,7 @@ import com.atamanahmet.beamlink.nexus.repository.FileTransferRepository;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.Setter;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 
@@ -25,34 +24,32 @@ import java.util.Arrays;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 
+@Slf4j
 @Service
 @RequiredArgsConstructor
 public class TransferAsyncSender {
 
-    private static final Logger log = LoggerFactory.getLogger(TransferAsyncSender.class);
-    private static final int CHUNK_SIZE = 8 * 1024 * 1024;
-
-    @Setter
-    private long retryDelayMs = 2000;
+    private static final int CHUNK_SIZE = 8388608;
+    private static final long RETRY_DELAY_MS = 2000L;
 
     private final FileTransferRepository transferRepository;
     private final ObjectMapper objectMapper;
     private final HttpSender httpSender;
 
     @Async
-    public void sendAsync(UUID transferId, String targetIp, int targetPort, String targetToken) {
-        doSend(transferId, targetIp, targetPort, targetToken);
+    public void sendAsync(UUID transferId, String targetIp, int targetPort) {
+        doSend(transferId, targetIp, targetPort);
     }
 
-    public CompletableFuture<Void> sendBlocking(UUID transferId, String targetIp, int targetPort, String targetToken) {
-        doSend(transferId, targetIp, targetPort, targetToken);
+    public CompletableFuture<Void> sendBlocking(UUID transferId, String targetIp, int targetPort) {
+        doSend(transferId, targetIp, targetPort);
         return CompletableFuture.completedFuture(null);
     }
 
-    private void doSend(UUID transferId, String targetIp, int targetPort, String targetToken) {
-        FileTransfer transfer = transferRepository.findByTransferId(transferId)
-                .orElse(null);
+    private void doSend(UUID transferId, String targetIp, int targetPort) {
+        log.info("doSend started for transferId: {}", transferId);
 
+        FileTransfer transfer = transferRepository.findByTransferId(transferId).orElse(null);
         if (transfer == null) {
             log.warn("Transfer not found, aborting async send: {}", transferId);
             return;
@@ -60,66 +57,64 @@ public class TransferAsyncSender {
 
         String baseUrl = "http://" + targetIp + ":" + targetPort;
 
-        try (RandomAccessFile raf = new RandomAccessFile(
-                Paths.get(transfer.getFilePath()).toFile(), "r")) {
+        try {
+            try (RandomAccessFile raf = new RandomAccessFile(Paths.get(transfer.getFilePath()).toFile(), "r")) {
+                long offset = transfer.getConfirmedOffset();
+                raf.seek(offset);
+                byte[] buffer = new byte[CHUNK_SIZE];
 
-            long offset = transfer.getConfirmedOffset();
-            raf.seek(offset);
+                int bytesRead;
+                while ((bytesRead = raf.read(buffer)) != -1) {
+                    transfer = transferRepository.findByTransferId(transferId).orElse(null);
+                    if (transfer == null) {
+                        log.warn("Transfer disappeared during send, stopping: {}", transferId);
+                        return;
+                    }
 
-            byte[] buffer = new byte[CHUNK_SIZE];
-            int bytesRead;
+                    if (transfer.getStatus() == TransferStatus.CANCELLED) {
+                        log.info("Transfer cancelled: {}", transferId);
+                        return;
+                    }
 
-            while ((bytesRead = raf.read(buffer)) != -1) {
+                    if (transfer.getStatus() == TransferStatus.PAUSED) {
+                        log.info("Transfer paused: {}", transferId);
+                        return;
+                    }
 
-                transfer = transferRepository.findByTransferId(transferId)
-                        .orElse(null);
+                    byte[] chunk = Arrays.copyOf(buffer, bytesRead);
+                    long chunkEnd = offset + bytesRead - 1L;
 
-                if (transfer == null) {
-                    log.warn("Transfer disappeared during send, stopping: {}", transferId);
-                    return;
-                }
+                    ChunkAckResponse ack = sendChunkWithRetry(
+                            baseUrl, transferId, offset, chunkEnd,
+                            transfer.getFileSize(), chunk, transfer.getMaxRetries()
+                    );
 
-                if (transfer.getStatus() == TransferStatus.CANCELLED) {
-                    log.info("Transfer cancelled: {}", transferId);
-                    return;
-                }
-                if (transfer.getStatus() == TransferStatus.PAUSED) {
-                    log.info("Transfer paused: {}", transferId);
-                    return;
-                }
+                    if (ack.getConfirmedOffset() < offset) {
+                        log.warn("Receiver offset mismatch. Rewinding from {} to {}", offset, ack.getConfirmedOffset());
+                        offset = ack.getConfirmedOffset();
+                        raf.seek(offset);
+                    } else {
+                        offset = ack.getConfirmedOffset();
+                        transfer.setConfirmedOffset(offset);
 
-                byte[] chunk = Arrays.copyOf(buffer, bytesRead);
-                long chunkEnd = offset + bytesRead - 1;
+                        Instant now = Instant.now();
+                        if (transfer.getLastChunkAt() != null) {
+                            long delta = now.toEpochMilli() - transfer.getLastChunkAt().toEpochMilli();
+                            transfer.setActiveTransferMs(transfer.getActiveTransferMs() + delta);
+                        }
+                        transfer.setLastChunkAt(now);
 
-                // retry loop per chunk
-                ChunkAckResponse ack = sendChunkWithRetry(
-                        baseUrl, transferId,
-                        offset, chunkEnd, transfer.getFileSize(),
-                        chunk, targetToken, transfer.getMaxRetries()
-                );
+                        transferRepository.save(transfer);
 
-                if (ack.getConfirmedOffset() < offset) {
-                    log.warn("Receiver offset mismatch. Rewinding from {} to {}", offset, ack.getConfirmedOffset());
-                    offset = ack.getConfirmedOffset();
-                    raf.seek(offset);
-                    continue;
-                }
-
-
-                offset = ack.getConfirmedOffset();
-
-                transfer.setConfirmedOffset(offset);
-                transfer.setLastChunkAt(Instant.now());
-                transferRepository.save(transfer);
-
-                if (ack.isComplete()) {
-                    transfer.setStatus(TransferStatus.COMPLETED);
-                    transferRepository.save(transfer);
-                    log.info("Transfer completed: {}", transferId);
-                    return;
+                        if (ack.isComplete()) {
+                            transfer.setStatus(TransferStatus.COMPLETED);
+                            transferRepository.save(transfer);
+                            log.info("Transfer completed: {}", transferId);
+                            return;
+                        }
+                    }
                 }
             }
-
         } catch (Exception e) {
             log.error("Transfer failed: {}", transferId, e);
             if (transfer != null) {
@@ -129,68 +124,53 @@ public class TransferAsyncSender {
     }
 
     private ChunkAckResponse sendChunkWithRetry(
-            String baseUrl, UUID transferId,
-            long offset, long chunkEnd, long fileSize,
-            byte[] chunk, String targetToken, int maxRetries
+            String baseUrl, UUID transferId, long offset, long chunkEnd,
+            long fileSize, byte[] chunk, int maxRetries
     ) throws IOException, InterruptedException {
-
         Exception lastException = null;
-        int stallCount = 0;
 
         for (int attempt = 1; attempt <= maxRetries; attempt++) {
             try {
-                ChunkAckResponse ack = sendChunk(baseUrl, transferId, offset, chunkEnd, fileSize, chunk, targetToken);
-
-
-                if (ack.getConfirmedOffset() == offset) {
-                    stallCount++;
-                    lastException = new IOException("No forward progress at offset " + offset);
-                    log.warn("Stall detected (attempt {}/{}): offset still at {}", attempt, maxRetries, offset);
-                    if (attempt < maxRetries) {
-                        Thread.sleep(retryDelayMs * attempt);
-                    }
-                    continue;  // ADD
+                ChunkAckResponse ack = sendChunk(baseUrl, transferId, offset, chunkEnd, fileSize, chunk);
+                if (ack.getConfirmedOffset() != offset) {
+                    return ack;
                 }
 
-                return ack;
+                lastException = new IOException("No forward progress at offset " + offset);
+                log.warn("Stall detected (attempt {}/{}): offset still at {}", attempt, maxRetries, offset);
+                if (attempt < maxRetries) {
+                    Thread.sleep(RETRY_DELAY_MS * attempt);
+                }
             } catch (Exception e) {
                 lastException = e;
                 log.warn("Chunk send failed (attempt {}/{}): {}", attempt, maxRetries, e.getMessage());
                 if (attempt < maxRetries) {
-                    Thread.sleep(retryDelayMs * attempt);
+                    Thread.sleep(RETRY_DELAY_MS * attempt);
                 }
             }
         }
 
         throw new FileTransferException(
-                "Chunk failed after " + maxRetries + " attempts at offset " + offset,
-                lastException
-        );
+                "Chunk failed after " + maxRetries + " attempts at offset " + offset, lastException);
     }
 
     private ChunkAckResponse sendChunk(
-            String baseUrl, UUID transferId,
-            long offset, long chunkEnd, long fileSize,
-            byte[] chunk, String targetToken
+            String baseUrl, UUID transferId, long offset, long chunkEnd,
+            long fileSize, byte[] chunk
     ) throws IOException, InterruptedException {
-
         String contentRange = "bytes " + offset + "-" + chunkEnd + "/" + fileSize;
 
         HttpRequest request = HttpRequest.newBuilder()
                 .uri(URI.create(baseUrl + "/api/transfers/" + transferId + "/chunk"))
                 .header("Content-Type", "application/octet-stream")
                 .header("Content-Range", contentRange)
-                .header("X-Auth-Token", targetToken != null ? targetToken : "")
                 .method("PATCH", HttpRequest.BodyPublishers.ofByteArray(chunk))
                 .build();
 
         HttpResponse<String> response = httpSender.send(request);
-
         if (response.statusCode() != 200) {
             throw new FileTransferException(
-                    "Chunk rejected. Status: " + response.statusCode()
-                            + " Body: " + response.body(), null
-            );
+                    "Chunk rejected. Status: " + response.statusCode() + " Body: " + response.body(), null);
         }
 
         return objectMapper.readValue(response.body(), ChunkAckResponse.class);

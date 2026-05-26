@@ -12,8 +12,7 @@ import com.atamanahmet.beamlink.nexus.security.AgentTokenService;
 import com.atamanahmet.beamlink.nexus.util.PathNormalizer;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -23,15 +22,14 @@ import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.time.Instant;
 import java.util.List;
-import java.util.Map;
 import java.util.UUID;
 
+@Slf4j
 @Service
 @RequiredArgsConstructor
 public class TransferSenderService {
 
-    private static final Logger log = LoggerFactory.getLogger(TransferSenderService.class);
-    private static final int CHUNK_SIZE = 8 * 1024 * 1024;
+    private static final int CHUNK_SIZE = 8388608;
 
     private final FileTransferRepository transferRepository;
     private final NexusConfig nexusConfig;
@@ -39,13 +37,8 @@ public class TransferSenderService {
     private final TransferAsyncSender asyncSender;
     private final TransferHttpClient transferHttpClient;
     private final AgentTokenService agentTokenService;
+    private final NexusService nexusService;
 
-    /**
-     * Called by TransferController when UI initiates a transfer.
-     * Validates the file, registers the transfer on the target,
-     * saves local FileTransfer record, then starts async sending.
-     */
-    @Transactional
     public InitiateTransferResponse initiate(InitiateTransferRequest request) {
         String cleanedPath = PathNormalizer.normalize(request.getFilePath());
         Path filePath = Paths.get(cleanedPath);
@@ -66,7 +59,7 @@ public class TransferSenderService {
 
         FileTransfer transfer = FileTransfer.initiate(
                 transferId,
-                NexusConfig.NEXUS_ID,
+                nexusService.getNexusId(),
                 request.getTargetAgentId(),
                 fileName,
                 cleanedPath,
@@ -75,60 +68,42 @@ public class TransferSenderService {
         transfer.setTargetIp(request.getTargetIp());
         transfer.setTargetPort(request.getTargetPort());
         transfer.setStatus(TransferStatus.PENDING);
-        transfer.setExpiresAt(Instant.now().plusSeconds(
-                nexusConfig.getTransferExpiryHours() * 3600L));
+        transfer.setExpiresAt(Instant.now().plusSeconds(nexusConfig.getTransferExpiryHours() * 3600L));
         transferRepository.save(transfer);
 
         try {
             transferHttpClient.registerTransfer(request, transferId, fileName, fileSize);
         } catch (FileTransferException e) {
-
-            /* Target unreachable or rejected, clean up */
             transferRepository.delete(transfer);
             throw e;
         }
 
         transfer.setStatus(TransferStatus.ACTIVE);
         transferRepository.save(transfer);
-
-        asyncSender.sendAsync(transferId,
-                request.getTargetIp(),
-                request.getTargetPort(),
-                agentTokenService.generateNexusToken());
-
-        log.info("Transfer initiated: {} → {} ({})",
-                fileName, request.getTargetAgentId(), transferId);
+        log.info("Transfer initiated: {} → {} ({})", fileName, request.getTargetAgentId(), transferId);
 
         return new InitiateTransferResponse(transferId);
     }
 
-    @Transactional
     public void resume(UUID transferId) {
         FileTransfer transfer = transferRepository.findByTransferId(transferId)
-                .orElseThrow(() -> new FileTransferException(
-                        "Transfer not found: " + transferId, null));
+                .orElseThrow(() -> new FileTransferException("Transfer not found: " + transferId, null));
 
         if (transfer.getStatus() != TransferStatus.PAUSED) {
-            throw new FileTransferException(
-                    "Transfer is not paused, current status: "
-                            + transfer.getStatus(), null);
+            throw new FileTransferException("Transfer is not paused, current status: " + transfer.getStatus(), null);
         }
 
         if (transfer.getTargetIp() == null || transfer.getTargetIp().isBlank()) {
-            throw new FileTransferException(
-                    "Transfer has no target IP stored, cannot resume", null);
+            throw new FileTransferException("Transfer has no target IP stored, cannot resume", null);
         }
 
         String cleanedPath = PathNormalizer.normalize(transfer.getFilePath());
         if (!Files.exists(Paths.get(cleanedPath))) {
-            throw new FileTransferException(
-                    "Source file no longer exists: " + cleanedPath, null);
+            throw new FileTransferException("Source file no longer exists: " + cleanedPath, null);
         }
 
         long targetOffset = transferHttpClient.queryConfirmedOffset(
-                transfer.getTargetIp(),
-                transfer.getTargetPort(),
-                transferId);
+                transfer.getTargetIp(), transfer.getTargetPort(), transferId);
 
         if (targetOffset != transfer.getConfirmedOffset()) {
             log.info("Correcting offset for {} from {} to {} (target state)",
@@ -138,23 +113,16 @@ public class TransferSenderService {
 
         transfer.setStatus(TransferStatus.ACTIVE);
         transferRepository.save(transfer);
-
-        asyncSender.sendAsync(transferId,
-                transfer.getTargetIp(),
-                transfer.getTargetPort(),
-                agentTokenService.generateNexusToken());
     }
 
     public FileTransfer getTransfer(UUID transferId) {
         return transferRepository.findByTransferId(transferId)
-                .orElseThrow(() -> new FileTransferException(
-                        "Transfer not found: " + transferId, null));
+                .orElseThrow(() -> new FileTransferException("Transfer not found: " + transferId, null));
     }
 
     public TransferStatus getStatus(UUID transferId) {
         return transferRepository.findStatusByTransferId(transferId)
-                .orElseThrow(() -> new FileTransferException(
-                        "Transfer not found: " + transferId, null));
+                .orElseThrow(() -> new FileTransferException("Transfer not found: " + transferId, null));
     }
 
     public List<FileTransfer> getAll() {
@@ -173,7 +141,20 @@ public class TransferSenderService {
         });
     }
 
-    /** Marks transfer as failed with reason */
+    @Transactional
+    public void delete(UUID transferId) {
+        transferRepository.findByTransferId(transferId).ifPresent(transfer -> {
+            TransferStatus s = transfer.getStatus();
+            if (s == TransferStatus.COMPLETED
+                    || s == TransferStatus.FAILED
+                    || s == TransferStatus.CANCELLED
+                    || s == TransferStatus.EXPIRED) {
+                transferRepository.delete(transfer);
+                log.info("Transfer deleted by user: {}", transferId);
+            }
+        });
+    }
+
     @Transactional
     public void markFailed(UUID transferId, String reason) {
         transferRepository.findByTransferId(transferId).ifPresent(transfer -> {
