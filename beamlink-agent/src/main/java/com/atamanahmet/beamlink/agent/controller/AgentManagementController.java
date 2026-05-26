@@ -12,8 +12,8 @@ import reactor.core.scheduler.Schedulers;
 import java.util.UUID;
 
 @RestController
-@RequestMapping("/api/agents")
 @RequiredArgsConstructor
+@RequestMapping("/api/agent")
 public class AgentManagementController {
 
     private final AgentService agentService;
