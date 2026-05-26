@@ -2,24 +2,21 @@ package com.atamanahmet.beamlink.agent.service;
 
 import com.atamanahmet.beamlink.agent.config.AgentConfig;
 import com.atamanahmet.beamlink.agent.domain.DirectoryTransfer;
+import com.atamanahmet.beamlink.agent.domain.FileTransfer;
 import com.atamanahmet.beamlink.agent.domain.enums.GroupTransferStatus;
 import com.atamanahmet.beamlink.agent.dto.InitiateDirectoryTransferRequest;
 import com.atamanahmet.beamlink.agent.dto.InitiateDirectoryTransferResponse;
 import com.atamanahmet.beamlink.agent.dto.ReceiveDirectoryRequest;
-import com.atamanahmet.beamlink.agent.domain.FileTransfer;
 import com.atamanahmet.beamlink.agent.exception.FileTransferException;
-import com.atamanahmet.beamlink.agent.repository.DirectoryTransferRepository;
-import com.atamanahmet.beamlink.agent.repository.FileTransferRepository;
+import com.atamanahmet.beamlink.agent.http.HttpSender;
 import com.atamanahmet.beamlink.agent.util.PathNormalizer;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
 import java.io.IOException;
 import java.net.URI;
-import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.file.Files;
@@ -32,28 +29,19 @@ import java.util.List;
 import java.util.UUID;
 import java.util.stream.Stream;
 
+@Slf4j
 @Service
 @RequiredArgsConstructor
 public class DirectorySenderService {
 
-    private static final Logger log = LoggerFactory.getLogger(DirectorySenderService.class);
-
-    private final DirectoryTransferRepository directoryTransferRepository;
-    private final FileTransferRepository fileTransferRepository;
-    private final AgentService agentService;
+    private final DirectoryTransferService directoryTransferService;
     private final AgentConfig agentConfig;
-    private final DirectoryAsyncSender directoryAsyncSender;
+    private final GroupTransferAsyncSender groupTransferAsyncSender;
     private final ObjectMapper objectMapper;
+    private final AgentService agentService;
+    private final HttpSender httpSender;
 
-    private final HttpClient httpClient;
-
-    /**
-     * Called by controller. Validates and walks the directory fully,
-     * saves all records, registers on target, then fires async send.
-     * Returns directoryTransferId immediately.
-     */
     public InitiateDirectoryTransferResponse initiate(InitiateDirectoryTransferRequest request) {
-
         String cleanedPath = PathNormalizer.normalize(request.getSourcePath());
         Path sourceDir = Paths.get(cleanedPath);
 
@@ -61,14 +49,12 @@ public class DirectorySenderService {
             throw new FileTransferException("Directory not found: " + cleanedPath, null);
         }
 
-        // Full walk, must complete before any network call
         WalkResult walk = walkDirectory(sourceDir);
-
         UUID directoryTransferId = UUID.randomUUID();
         UUID sourceAgentId = agentService.getAgentId();
         String directoryName = sourceDir.getFileName().toString();
 
-        DirectoryTransfer directoryTransfer = DirectoryTransfer.initiate(
+        directoryTransferService.create(
                 directoryTransferId,
                 sourceAgentId,
                 request.getTargetAgentId(),
@@ -76,28 +62,27 @@ public class DirectorySenderService {
                 request.getTargetPort(),
                 directoryName,
                 cleanedPath,
-                walk.files.size(),
-                walk.totalSize,
-                walk.emptyDirectories
+                walk.files().size(),
+                walk.totalSize(),
+                walk.emptyDirectories(),
+                request.getDispatchId()
         );
-        directoryTransferRepository.save(directoryTransfer);
 
-        // Build FileTransfer records and registration payload together
         List<FileTransfer> fileTransfers = new ArrayList<>();
         List<ReceiveDirectoryRequest.FileEntry> fileEntries = new ArrayList<>();
 
-        for (WalkResult.FileEntry entry : walk.files) {
+        for (WalkResult.FileEntry entry : walk.files()) {
             UUID transferId = UUID.randomUUID();
-            String fileName = entry.absolutePath.getFileName().toString();
-            String relativePath = sourceDir.relativize(entry.absolutePath).toString();
+            String fileName = entry.absolutePath().getFileName().toString();
+            String relativePath = sourceDir.relativize(entry.absolutePath()).toString();
 
             FileTransfer ft = FileTransfer.initiate(
                     transferId,
                     sourceAgentId,
                     request.getTargetAgentId(),
                     fileName,
-                    entry.absolutePath.toString(),
-                    entry.fileSize
+                    entry.absolutePath().toString(),
+                    entry.fileSize()
             );
             ft.setDirectoryTransferId(directoryTransferId);
             ft.setRelativePath(relativePath);
@@ -110,22 +95,21 @@ public class DirectorySenderService {
             fe.setTransferId(transferId);
             fe.setFileName(fileName);
             fe.setRelativePath(relativePath);
-            fe.setFileSize(entry.fileSize);
+            fe.setFileSize(entry.fileSize());
             fileEntries.add(fe);
         }
 
-        fileTransferRepository.saveAll(fileTransfers);
+        directoryTransferService.saveChildren(fileTransfers);
+        registerOnTarget(request, directoryTransferId, sourceAgentId, directoryName, walk, fileEntries);
+        directoryTransferService.markActive(directoryTransferId);
 
-        // Register everything on target in one call, walk is complete, no partial state
-        registerOnTarget(request, directoryTransferId, sourceAgentId, directoryName,
-                walk, fileEntries);
-
-        // Target accepted, mark active and start
-        directoryTransfer.setStatus(GroupTransferStatus.ACTIVE);
-        directoryTransferRepository.save(directoryTransfer);
-
-        directoryAsyncSender.sendAsync(directoryTransferId, request.getTargetIp(),
-                request.getTargetPort(), request.getTargetToken());
+        GroupTransferContext ctx = new GroupTransferContext(
+                directoryTransferId,
+                request.getTargetIp(),
+                request.getTargetPort(),
+                directoryTransferService
+        );
+        groupTransferAsyncSender.sendAsync(ctx);
 
         log.info("Directory transfer initiated: {} → {} ({})",
                 directoryName, request.getTargetAgentId(), directoryTransferId);
@@ -133,57 +117,45 @@ public class DirectorySenderService {
         return new InitiateDirectoryTransferResponse(directoryTransferId);
     }
 
-    /**
-     * Resumes a PAUSED directory transfer
-     * PAUSED file resumes from confirmed offset, remaining PENDING files continue in order.
-     */
     public void resume(UUID directoryTransferId) {
-        DirectoryTransfer dt = directoryTransferRepository.findById(directoryTransferId)
-                .orElseThrow(() -> new FileTransferException(
-                        "Directory transfer not found: " + directoryTransferId, null));
-
-        if (dt.getStatus() != GroupTransferStatus.PAUSED) {
-            throw new FileTransferException(
-                    "Directory transfer is not paused, current status: " + dt.getStatus(), null);
+        if (directoryTransferService.getStatus(directoryTransferId) != GroupTransferStatus.PAUSED) {
+            throw new FileTransferException("Directory transfer is not paused: " + directoryTransferId, null);
         }
 
-        dt.setStatus(GroupTransferStatus.ACTIVE);
-        directoryTransferRepository.save(dt);
+        DirectoryTransfer dt = directoryTransferService.get(directoryTransferId);
+        directoryTransferService.markActive(directoryTransferId);
 
-        /* Fires on a Spring-managed proxy — @Async works correctly here. */
-        directoryAsyncSender.sendAsync(directoryTransferId, dt.getTargetIp(),
-                dt.getTargetPort(), null); // token not stored — TODO: agent-to-agent auth
+        GroupTransferContext ctx = new GroupTransferContext(
+                directoryTransferId,
+                dt.getTargetIp(),
+                dt.getTargetPort(),
+                directoryTransferService
+        );
+        groupTransferAsyncSender.sendAsync(ctx);
     }
 
-    /**
-     * Full recursive walk. Completes entirely before any network call
-     * Throws if any file is unreadable, no partial walks ever reach the target
-     */
     private WalkResult walkDirectory(Path root) {
         List<WalkResult.FileEntry> files = new ArrayList<>();
         List<String> emptyDirectories = new ArrayList<>();
-        long totalSize = 0;
+        long totalSize = 0L;
 
         try (Stream<Path> stream = Files.walk(root)) {
-            List<Path> all = stream.sorted().toList();
-
-            for (Path path : all) {
+            for (Path path : stream.sorted().toList()) {
                 if (path.equals(root)) continue;
 
                 if (Files.isDirectory(path)) {
-                    boolean hasAnyFileAnywhere;
+                    boolean hasFiles;
                     try (Stream<Path> dirContents = Files.walk(path)) {
-                        hasAnyFileAnywhere = dirContents
+                        hasFiles = dirContents
                                 .filter(p -> !p.equals(path))
                                 .anyMatch(Files::isRegularFile);
                     }
-                    if (!hasAnyFileAnywhere) {
+                    if (!hasFiles) {
                         emptyDirectories.add(root.relativize(path).toString());
                     }
                 } else if (Files.isRegularFile(path)) {
                     if (!Files.isReadable(path)) {
-                        throw new FileTransferException(
-                                "File is not readable: " + path, null);
+                        throw new FileTransferException("File is not readable: " + path, null);
                     }
                     long size = Files.size(path);
                     files.add(new WalkResult.FileEntry(path, size));
@@ -195,16 +167,14 @@ public class DirectorySenderService {
         }
 
         if (files.isEmpty()) {
-            throw new FileTransferException(
-                    "Directory contains no files to transfer", null);
+            throw new FileTransferException("Directory contains no files to transfer", null);
         }
 
-        WalkResult result = new WalkResult();
-        result.files = files;
-        result.emptyDirectories = emptyDirectories.isEmpty()
-                ? Collections.emptyList() : emptyDirectories;
-        result.totalSize = totalSize;
-        return result;
+        return new WalkResult(
+                files,
+                emptyDirectories.isEmpty() ? Collections.emptyList() : emptyDirectories,
+                totalSize
+        );
     }
 
     private void registerOnTarget(
@@ -217,34 +187,28 @@ public class DirectorySenderService {
     ) {
         ReceiveDirectoryRequest payload = new ReceiveDirectoryRequest();
         payload.setDirectoryTransferId(directoryTransferId);
+        payload.setDispatchId(request.getDispatchId());
         payload.setSourceAgentId(sourceAgentId);
         payload.setDirectoryName(directoryName);
-        payload.setTotalFiles(walk.files.size());
-        payload.setTotalSize(walk.totalSize);
-        payload.setEmptyDirectories(walk.emptyDirectories);
+        payload.setTotalFiles(walk.files().size());
+        payload.setTotalSize(walk.totalSize());
+        payload.setEmptyDirectories(walk.emptyDirectories());
         payload.setFiles(fileEntries);
 
         try {
             String body = objectMapper.writeValueAsString(payload);
-
             HttpRequest httpRequest = HttpRequest.newBuilder()
-                    .uri(URI.create("http://" + request.getTargetIp() + ":"
-                            + request.getTargetPort() + "/api/transfers/receive-directory"))
+                    .uri(URI.create("http://" + request.getTargetIp() + ":" + request.getTargetPort() + "/api/transfers/receive-directory"))
                     .header("Content-Type", "application/json")
-                    .header("X-Auth-Token",
-                            request.getTargetToken() != null ? request.getTargetToken() : "")
                     .POST(HttpRequest.BodyPublishers.ofString(body))
                     .build();
 
-            HttpResponse<String> response = httpClient.send(
-                    httpRequest, HttpResponse.BodyHandlers.ofString());
-
+            HttpResponse<String> response = httpSender.send(httpRequest);
             if (response.statusCode() != 200) {
-                throw new FileTransferException(
-                        "Target rejected directory registration. Status: "
-                                + response.statusCode(), null);
+                throw new FileTransferException("Target rejected directory registration. Status: " + response.statusCode(), null);
             }
-
+        } catch (FileTransferException e) {
+            throw e;
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             throw new FileTransferException("Cannot reach target agent", e);
@@ -253,19 +217,7 @@ public class DirectorySenderService {
         }
     }
 
-    private static class WalkResult {
-        List<FileEntry> files;
-        List<String> emptyDirectories;
-        long totalSize;
-
-        static class FileEntry {
-            final Path absolutePath;
-            final long fileSize;
-
-            FileEntry(Path absolutePath, long fileSize) {
-                this.absolutePath = absolutePath;
-                this.fileSize = fileSize;
-            }
-        }
+    private record WalkResult(List<FileEntry> files, List<String> emptyDirectories, long totalSize) {
+        record FileEntry(Path absolutePath, long fileSize) {}
     }
 }

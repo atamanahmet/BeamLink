@@ -1,25 +1,21 @@
 package com.atamanahmet.beamlink.agent.service;
 
 import com.atamanahmet.beamlink.agent.config.AgentConfig;
-import com.atamanahmet.beamlink.agent.domain.BatchTransfer;
 import com.atamanahmet.beamlink.agent.domain.FileTransfer;
 import com.atamanahmet.beamlink.agent.domain.enums.GroupTransferStatus;
 import com.atamanahmet.beamlink.agent.dto.InitiateBatchTransferRequest;
 import com.atamanahmet.beamlink.agent.dto.InitiateBatchTransferResponse;
 import com.atamanahmet.beamlink.agent.dto.ReceiveBatchRequest;
 import com.atamanahmet.beamlink.agent.exception.FileTransferException;
-import com.atamanahmet.beamlink.agent.repository.BatchTransferRepository;
-import com.atamanahmet.beamlink.agent.repository.FileTransferRepository;
+import com.atamanahmet.beamlink.agent.http.HttpSender;
 import com.atamanahmet.beamlink.agent.util.PathNormalizer;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
 import java.io.IOException;
 import java.net.URI;
-import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.file.Files;
@@ -30,44 +26,38 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 
+@Slf4j
 @Service
 @RequiredArgsConstructor
 public class BatchSenderService {
 
-    private static final Logger log = LoggerFactory.getLogger(BatchSenderService.class);
-
-    private final BatchTransferRepository batchTransferRepository;
-    private final FileTransferRepository fileTransferRepository;
-    private final AgentService agentService;
+    private final BatchTransferService batchTransferService;
     private final AgentConfig agentConfig;
-    private final BatchAsyncSender batchAsyncSender;
+    private final GroupTransferAsyncSender groupTransferAsyncSender;
     private final ObjectMapper objectMapper;
-
-    private final HttpClient httpClient;
+    private final AgentService agentService;
+    private final HttpSender httpSender;
 
     public InitiateBatchTransferResponse initiate(InitiateBatchTransferRequest request) {
-
         if (request.getFilePaths() == null || request.getFilePaths().isEmpty()) {
             throw new FileTransferException("No file paths provided for batch transfer", null);
         }
 
         List<ValidatedFile> validatedFiles = validateFiles(request.getFilePaths());
-
         UUID batchTransferId = UUID.randomUUID();
         UUID sourceAgentId = agentService.getAgentId();
-
         long totalSize = validatedFiles.stream().mapToLong(vf -> vf.fileSize).sum();
 
-        BatchTransfer batchTransfer = BatchTransfer.initiate(
+        batchTransferService.create(
                 batchTransferId,
                 sourceAgentId,
                 request.getTargetAgentId(),
                 request.getTargetIp(),
                 request.getTargetPort(),
                 validatedFiles.size(),
-                totalSize
+                totalSize,
+                request.getDispatchId()
         );
-        batchTransferRepository.save(batchTransfer);
 
         List<FileTransfer> fileTransfers = new ArrayList<>();
         List<ReceiveBatchRequest.FileEntry> fileEntries = new ArrayList<>();
@@ -96,16 +86,17 @@ public class BatchSenderService {
             fileEntries.add(fe);
         }
 
-        fileTransferRepository.saveAll(fileTransfers);
+        batchTransferService.saveChildren(fileTransfers);
+        registerOnTarget(request, batchTransferId, sourceAgentId, validatedFiles.size(), totalSize, fileEntries);
+        batchTransferService.markActive(batchTransferId);
 
-        registerOnTarget(request, batchTransferId, sourceAgentId,
-                validatedFiles.size(), totalSize, fileEntries);
-
-        batchTransfer.setStatus(GroupTransferStatus.ACTIVE);
-        batchTransferRepository.save(batchTransfer);
-
-        batchAsyncSender.sendAsync(batchTransferId, request.getTargetIp(),
-                request.getTargetPort(), request.getTargetToken());
+        GroupTransferContext ctx = new GroupTransferContext(
+                batchTransferId,
+                request.getTargetIp(),
+                request.getTargetPort(),
+                batchTransferService
+        );
+        groupTransferAsyncSender.sendAsync(ctx);
 
         log.info("Batch transfer initiated: {} files → {} ({})",
                 validatedFiles.size(), request.getTargetAgentId(), batchTransferId);
@@ -114,24 +105,25 @@ public class BatchSenderService {
     }
 
     public void resume(UUID batchTransferId) {
-        BatchTransfer bt = batchTransferRepository.findById(batchTransferId)
-                .orElseThrow(() -> new FileTransferException(
-                        "Batch transfer not found: " + batchTransferId, null));
-
+        var bt = batchTransferService.get(batchTransferId);
         if (bt.getStatus() != GroupTransferStatus.PAUSED) {
-            throw new FileTransferException(
-                    "Batch transfer is not paused, current status: " + bt.getStatus(), null);
+            throw new FileTransferException("Batch transfer is not paused, current status: " + bt.getStatus(), null);
         }
 
-        bt.setStatus(GroupTransferStatus.ACTIVE);
-        batchTransferRepository.save(bt);
+        batchTransferService.markActive(batchTransferId);
 
-        batchAsyncSender.sendAsync(batchTransferId, bt.getTargetIp(),
-                bt.getTargetPort(), null);
+        GroupTransferContext ctx = new GroupTransferContext(
+                batchTransferId,
+                bt.getTargetIp(),
+                bt.getTargetPort(),
+                batchTransferService
+        );
+        groupTransferAsyncSender.sendAsync(ctx);
     }
 
     private List<ValidatedFile> validateFiles(List<String> filePaths) {
         List<ValidatedFile> result = new ArrayList<>();
+
         for (String raw : filePaths) {
             String cleaned = PathNormalizer.normalize(raw);
             Path path = Paths.get(cleaned);
@@ -139,6 +131,7 @@ public class BatchSenderService {
             if (!Files.exists(path) || !Files.isRegularFile(path)) {
                 throw new FileTransferException("File not found: " + cleaned, null);
             }
+
             if (!Files.isReadable(path)) {
                 throw new FileTransferException("File not readable: " + cleaned, null);
             }
@@ -152,6 +145,7 @@ public class BatchSenderService {
 
             result.add(new ValidatedFile(path, size));
         }
+
         return result;
     }
 
@@ -165,6 +159,7 @@ public class BatchSenderService {
     ) {
         ReceiveBatchRequest payload = new ReceiveBatchRequest();
         payload.setBatchTransferId(batchTransferId);
+        payload.setDispatchId(request.getDispatchId());
         payload.setSourceAgentId(sourceAgentId);
         payload.setTotalFiles(totalFiles);
         payload.setTotalSize(totalSize);
@@ -172,37 +167,22 @@ public class BatchSenderService {
 
         try {
             String body = objectMapper.writeValueAsString(payload);
-
             HttpRequest httpRequest = HttpRequest.newBuilder()
-                    .uri(URI.create("http://" + request.getTargetIp() + ":"
-                            + request.getTargetPort() + "/api/transfers/receive-batch"))
+                    .uri(URI.create("http://" + request.getTargetIp() + ":" + request.getTargetPort() + "/api/transfers/receive-batch"))
                     .header("Content-Type", "application/json")
-                    .header("X-Auth-Token",
-                            request.getTargetToken() != null ? request.getTargetToken() : "")
                     .POST(HttpRequest.BodyPublishers.ofString(body))
                     .build();
 
-            HttpResponse<String> response = httpClient.send(
-                    httpRequest, HttpResponse.BodyHandlers.ofString());
-
+            HttpResponse<String> response = httpSender.send(httpRequest);
             if (response.statusCode() != 200) {
-                throw new FileTransferException(
-                        "Target rejected batch registration. Status: "
-                                + response.statusCode(), null);
+                throw new FileTransferException("Target rejected batch registration. Status: " + response.statusCode(), null);
             }
-
-        } catch (IOException | InterruptedException e) {
+        } catch (FileTransferException e) {
+            throw e;
+        } catch (InterruptedException | IOException e) {
             throw new FileTransferException("Cannot reach target agent", e);
         }
     }
 
-    private static class ValidatedFile {
-        final Path path;
-        final long fileSize;
-
-        ValidatedFile(Path path, long fileSize) {
-            this.path = path;
-            this.fileSize = fileSize;
-        }
-    }
+    private record ValidatedFile(Path path, long fileSize) {}
 }

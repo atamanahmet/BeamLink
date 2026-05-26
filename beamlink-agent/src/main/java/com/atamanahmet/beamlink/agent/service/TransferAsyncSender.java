@@ -37,16 +37,16 @@ public class TransferAsyncSender {
     private final HttpSender httpSender;
 
     @Async
-    public void sendAsync(UUID transferId, String targetIp, int targetPort, String targetToken) {
-        doSend(transferId, targetIp, targetPort, targetToken);
+    public void sendAsync(UUID transferId, String targetIp, int targetPort) {
+        doSend(transferId, targetIp, targetPort);
     }
 
-    public CompletableFuture<Void> sendBlocking(UUID transferId, String targetIp, int targetPort, String targetToken) {
-        doSend(transferId, targetIp, targetPort, targetToken);
+    public CompletableFuture<Void> sendBlocking(UUID transferId, String targetIp, int targetPort) {
+        doSend(transferId, targetIp, targetPort);
         return CompletableFuture.completedFuture(null);
     }
 
-    private void doSend(UUID transferId, String targetIp, int targetPort, String targetToken) {
+    private void doSend(UUID transferId, String targetIp, int targetPort) {
         FileTransfer transfer = transferRepository.findByTransferId(transferId)
                 .orElse(null);
 
@@ -92,7 +92,7 @@ public class TransferAsyncSender {
                 ChunkAckResponse ack = sendChunkWithRetry(
                         baseUrl, transferId,
                         offset, chunkEnd, transfer.getFileSize(),
-                        chunk, targetToken, transfer.getMaxRetries()
+                        chunk, transfer.getMaxRetries()
                 );
 
                 if (ack.getConfirmedOffset() < offset) {
@@ -128,7 +128,7 @@ public class TransferAsyncSender {
     private ChunkAckResponse sendChunkWithRetry(
             String baseUrl, UUID transferId,
             long offset, long chunkEnd, long fileSize,
-            byte[] chunk, String targetToken, int maxRetries
+            byte[] chunk, int maxRetries
     ) throws IOException, InterruptedException {
 
         Exception lastException = null;
@@ -136,7 +136,7 @@ public class TransferAsyncSender {
 
         for (int attempt = 1; attempt <= maxRetries; attempt++) {
             try {
-                ChunkAckResponse ack = sendChunk(baseUrl, transferId, offset, chunkEnd, fileSize, chunk, targetToken);
+                ChunkAckResponse ack = sendChunk(baseUrl, transferId, offset, chunkEnd, fileSize, chunk);
 
 
                 if (ack.getConfirmedOffset() == offset) {
@@ -168,7 +168,7 @@ public class TransferAsyncSender {
     private ChunkAckResponse sendChunk(
             String baseUrl, UUID transferId,
             long offset, long chunkEnd, long fileSize,
-            byte[] chunk, String targetToken
+            byte[] chunk
     ) throws IOException, InterruptedException {
 
         String contentRange = "bytes " + offset + "-" + chunkEnd + "/" + fileSize;
@@ -177,7 +177,6 @@ public class TransferAsyncSender {
                 .uri(URI.create(baseUrl + "/api/transfers/" + transferId + "/chunk"))
                 .header("Content-Type", "application/octet-stream")
                 .header("Content-Range", contentRange)
-                .header("X-Auth-Token", targetToken != null ? targetToken : "")
                 .method("PATCH", HttpRequest.BodyPublishers.ofByteArray(chunk))
                 .build();
 
