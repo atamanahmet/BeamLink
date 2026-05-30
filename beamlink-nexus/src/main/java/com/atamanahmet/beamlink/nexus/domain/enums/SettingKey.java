@@ -6,5 +6,6 @@ public enum SettingKey {
     STORAGE_TEMP_DIR,
     NEXUS_NAME,
     RSA_PRIVATE_KEY,
-    RSA_PUBLIC_KEY
+    RSA_PUBLIC_KEY,
+    TRANSFER_SPEED_CAP_MBPS
 }
