@@ -8,6 +8,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
+import java.net.URI;
 import java.util.concurrent.atomic.AtomicReference;
 
 /**
@@ -69,5 +70,29 @@ public class NexusAddressHolder {
         settingsRepository.findByKey(SettingKey.NEXUS_URL)
                 .ifPresent(settingsRepository::delete);
         log.info("Nexus URL cleared");
+    }
+
+    public String getHost() {
+        URI uri = getNexusUri();
+        return uri != null ? uri.getHost() : null;
+    }
+
+    public int getPort() {
+        URI uri = getNexusUri();
+        return uri != null ? uri.getPort() : -1;
+    }
+
+    public URI getNexusUri() {
+        String url = nexusUrl.get();
+        if (url == null) return null;
+        return URI.create(url);
+    }
+
+    public boolean updateIfChanged(String newUrl) {
+        String current = nexusUrl.get();
+        if (newUrl == null || newUrl.equals(current)) return false;
+
+        setNexusUrl(newUrl);
+        return true;
     }
 }
