@@ -5,19 +5,14 @@ server:
 spring:
   application:
     name: beamlink-nexus
-  servlet:
-    multipart:
-      enabled: ${MULTIPART_ENABLED:true}
-      max-file-size: ${MULTIPART_MAX_FILE_SIZE}
-      max-request-size: ${MULTIPART_MAX_REQUEST_SIZE}
-      file-size-threshold: ${MULTIPART_FILE_SIZE_THRESHOLD}
+  config:
+    import: optional:file:../config/.env[.properties]
   datasource:
     driver-class-name: org.sqlite.JDBC
-    url: "jdbc:sqlite:./data/database/nexus.db"
+    url: "jdbc:sqlite:${beamlink.runtime.dir}/data/database/nexus.db?journal_mode=WAL&busy_timeout=3000&foreign_keys=on"
     hikari:
-      maximum-pool-size: 4
+      maximum-pool-size: 1
       minimum-idle: 1
-      connection-init-sql: "PRAGMA journal_mode=WAL; PRAGMA busy_timeout=3000"
   flyway:
     enabled: true
     locations: classpath:db/migration
@@ -29,33 +24,33 @@ spring:
     properties:
       hibernate:
         dialect: org.hibernate.community.dialect.SQLiteDialect
+    open-in-view: false
 
 nexus:
   data:
-    directory: ./data
+    directory: ${beamlink.runtime.dir}
   update:
-    storage-path: ./update-package
+    storage-path: ${beamlink.runtime.dir}/data/update-package
+  upload:
+    directory: ${beamlink.runtime.dir}/data/uploads
+    temp-directory: ${beamlink.runtime.dir}/data/temp
   approval:
     required: true
   name: ${NEXUS_NAME}
+  ip: ${NEXUS_IP:auto}
   monitoring:
     interval: 60000
-  upload:
-    directory: ./data/uploads
-    partial-directory: ./data/partial
   transfer:
     expiry-hours: ${TRANSFER_EXPIRY_HOURS:24}
   jwt:
-    secret: ${NEXUS_JWT_SECRET}
     admin-expiration-minutes: ${NEXUS_JWT_ADMIN_EXPIRATION_MINUTES}
     agent-auth-expiration-days: ${NEXUS_JWT_AGENT_AUTH_EXPIRATION_DAYS}
     agent-public-expiration-days: ${NEXUS_JWT_AGENT_PUBLIC_EXPIRATION_DAYS}
   cors:
-    static-origins: http://localhost:5173
+    static-origins: ${NEXUS_CORS_STATIC_ORIGINS}
   admin:
     username: ${NEXUS_ADMIN_USERNAME}
     password: ${NEXUS_ADMIN_PASSWORD}
-  ip-address: ${NEXUS_IP}
 
 logging:
   level:
@@ -63,6 +58,12 @@ logging:
     root: INFO
     com.atamanahmet.beamlink: INFO
   file:
-    name: logs/nexus.log
+    name: ${beamlink.runtime.dir}/logs/nexus.log
   pattern:
     console: "%d{HH:mm:ss.SSS} [%thread] %-5level %logger{36} - %msg%n"
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health
