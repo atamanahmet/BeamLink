@@ -11,10 +11,7 @@ import java.util.UUID;
 @NoArgsConstructor
 public class AgentStatusRequest {
     private UUID agentId;
-    private String agentName;
     private String ipAddress;
     private int port;
-    private boolean online;
-    private int unSyncedLogs;
     private long peerVersion;
 }

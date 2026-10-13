@@ -1,14 +1,14 @@
 package com.atamanahmet.beamlink.nexus.dto;
 
-import lombok.AllArgsConstructor;
-import lombok.Getter;
-import lombok.NoArgsConstructor;
-import lombok.Setter;
+import lombok.*;
 
 @Getter
 @Setter
 @AllArgsConstructor
 @NoArgsConstructor
+@Builder
 public class StatusUpdatePayload {
-    private int peerVersion;
+    private String ipAddress;
+    private int port;
+    private long peerVersion;
 }

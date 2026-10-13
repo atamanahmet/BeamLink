@@ -11,7 +11,6 @@ import java.util.List;
 @AllArgsConstructor
 public class AgentStatusResponse {
     private String status;
-    private String approvedName;
     private boolean peerOutdated;
-    private List<AgentDTO> agents;
+    private List<PeerDTO> peers;
 }

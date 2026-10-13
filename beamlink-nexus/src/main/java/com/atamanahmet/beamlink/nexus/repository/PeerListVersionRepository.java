@@ -5,4 +5,4 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.stereotype.Repository;
 
 @Repository
-public interface PeerListVersionRepository extends JpaRepository<PeerListVersion, Long> {}
+public interface PeerListVersionRepository extends JpaRepository<PeerListVersion, Integer> {}

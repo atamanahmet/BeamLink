@@ -4,8 +4,11 @@ import com.atamanahmet.beamlink.nexus.domain.Agent;
 import com.atamanahmet.beamlink.nexus.domain.enums.AgentState;
 import com.atamanahmet.beamlink.nexus.dto.*;
 import com.atamanahmet.beamlink.nexus.event.AgentApprovedEvent;
+import com.atamanahmet.beamlink.nexus.event.AgentRenamedEvent;
 import com.atamanahmet.beamlink.nexus.exception.AgentNotFoundException;
 import com.atamanahmet.beamlink.nexus.exception.NameAlreadyInUseException;
+import com.atamanahmet.beamlink.nexus.mapper.AgentMapper;
+import com.atamanahmet.beamlink.nexus.mapper.PeerMapper;
 import com.atamanahmet.beamlink.nexus.repository.AgentRepository;
 import com.atamanahmet.beamlink.nexus.security.AgentTokenService;
 import lombok.RequiredArgsConstructor;
@@ -15,8 +18,6 @@ import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
-import org.springframework.transaction.support.TransactionSynchronization;
-import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 import java.time.Duration;
 import java.time.Instant;
@@ -30,30 +31,26 @@ import java.util.stream.Collectors;
 @RequiredArgsConstructor
 public class AgentService {
 
+    private static final int OFFLINE_THRESHOLD_MINUTES = 2;
+
     private final AgentRepository agentRepository;
     private final PeerListService peerListService;
     private final AgentTokenService agentTokenService;
-    private final AgentPushService agentPushService;
+    private final AgentMapper agentMapper;
     private final ApplicationEventPublisher eventPublisher;
+    private final AgentSessionService agentSessionService;
+    private final PeerMapper peerMapper;
 
-    private static final int OFFLINE_THRESHOLD_MINUTES = 2;
-
-    /**
-     * Agent registration.
-     * Checks if agent at ip:port already exists in DB.
-     */
     @Transactional
     public AgentRegistrationResponse register(AgentRegistrationRequest request) {
-        Optional<Agent> existing = agentRepository.findByIpAddressAndPort(
-                request.getIpAddress(), request.getPort());
-
+        Optional<Agent> existing = agentRepository.findByIpAddressAndPort(request.getIpAddress(), request.getPort());
         if (existing.isPresent()) {
             Agent agent = existing.get();
             log.info("Agent already registered: {}. Returning existing record.", agent.getId());
             return new AgentRegistrationResponse(agent.getId(), agent.getState());
         }
 
-        String name = (request.getAgentName() != null && !request.getAgentName().isBlank())
+        String name = request.getAgentName() != null && !request.getAgentName().isBlank()
                 ? request.getAgentName()
                 : request.getIpAddress() + ":" + request.getPort();
 
@@ -70,11 +67,8 @@ public class AgentService {
             Agent saved = agentRepository.saveAndFlush(agent);
             log.info("New agent registered: {} awaiting admin approval.", saved.getId());
             return new AgentRegistrationResponse(saved.getId(), saved.getState());
-
         } catch (DataIntegrityViolationException e) {
-
-            log.warn("Registration issue for {}:{}, resolving",
-                    request.getIpAddress(), request.getPort());
+            log.warn("Registration issue for {}:{}, resolving", request.getIpAddress(), request.getPort());
             return resolveOldInfo(request.getIpAddress(), request.getPort());
         }
     }
@@ -83,8 +77,7 @@ public class AgentService {
     protected AgentRegistrationResponse resolveOldInfo(String ipAddress, int port) {
         Agent agent = agentRepository.findByIpAddressAndPort(ipAddress, port)
                 .orElseThrow(() -> new IllegalStateException(
-                        "Agent not found after constraint violation for "
-                                + ipAddress + ":" + port));
+                        "Agent not found after constraint violation for " + ipAddress + ":" + port));
         log.info("Issue resolved: returning existing agent {}.", agent.getId());
         return new AgentRegistrationResponse(agent.getId(), agent.getState());
     }
@@ -97,47 +90,35 @@ public class AgentService {
         return agentRepository.findByIpAddressAndPort(ipAddress, port);
     }
 
-    /**
-     * Status update received from the agent itself.
-     * Handles ip:port changes and peer list sync.
-     */
     @Transactional
     public AgentStatusResponse updateAgentStatus(AgentStatusRequest request) {
-        log.info("Status update requested for agent: {}", request.getAgentId());
+        StatusUpdatePayload payload = StatusUpdatePayload.builder()
+                .ipAddress(request.getIpAddress())
+                .port(request.getPort())
+                .peerVersion(request.getPeerVersion())
+                .build();
 
-        Agent agent = agentRepository.findById(request.getAgentId())
-                .orElseThrow(() -> new AgentNotFoundException(
-                        "Unknown agent: " + request.getAgentId()));
-
-        boolean addressChanged = !request.getIpAddress().equals(agent.getIpAddress())
-                || request.getPort() != agent.getPort();
-
+        boolean addressChanged = agentSessionService.applyStatusUpdate(request.getAgentId(), payload);
         if (addressChanged) {
-            agent.setIpAddress(request.getIpAddress());
-            agent.setPort(request.getPort());
-        }
-
-        agent.setLastSeenAt(Instant.now());
-        agentRepository.save(agent);
-
-        if (addressChanged && agent.getState() == AgentState.APPROVED) {
             peerListService.incrementVersion();
-            log.info("Agent {} address changed, peer list version incremented.", request.getAgentId());
+            log.info("Agent {} address changed via HTTP fallback, peer list version incremented.", request.getAgentId());
         }
 
-        boolean peerOutdated = peerListService.isPeerListOutdated(request.getPeerVersion());
+        Agent agent = agentSessionService.findById(request.getAgentId());
+        boolean peerOutdated = request.getPeerVersion() < peerListService.getCurrentVersion();
 
-        List<AgentDTO> peers = null;
+        List<PeerDTO> peers = null;
         if (peerOutdated && agent.getState() == AgentState.APPROVED) {
-            peers = agentRepository.findByState(AgentState.APPROVED).stream()
-                    .map(this::toDTO)
+            peers = agentSessionService.findApproved().stream()
+                    .map(peerMapper::fromAgent)
                     .collect(Collectors.toList());
+            peers.add(0, peerMapper.nexusPeer());
         }
 
         return AgentStatusResponse.builder()
                 .status(agent.getState().name())
                 .peerOutdated(peerOutdated)
-                .agents(peers)
+                .peers(peers)
                 .build();
     }
 
@@ -186,7 +167,6 @@ public class AgentService {
         long pending = agentRepository.countByState(AgentState.PENDING_APPROVAL);
         long pendingRename = agentRepository.countByStateAndRequestedNameIsNotNull(AgentState.APPROVED);
         long offline = total - online;
-
         return new AgentStats(total, online, offline, pending, pendingRename);
     }
 
@@ -194,70 +174,41 @@ public class AgentService {
         return agentRepository.findByStateAndRequestedNameIsNotNull(AgentState.APPROVED);
     }
 
-    /**
-     * Admin action, approve agent to network
-     * Generates a publicId, creates tokens, trighgers pushes to agent
-     */
     @Transactional
     public void approveAgent(UUID agentId) {
         Agent agent = findByAgentId(agentId);
-
         if (agent.getState() != AgentState.PENDING_APPROVAL) {
             throw new IllegalStateException("Agent is not pending approval");
         }
 
-        UUID publicId = UUID.randomUUID();
-
         agent.setState(AgentState.APPROVED);
-        agent.setPublicId(publicId);
+        agent.setPublicId(UUID.randomUUID());
         agent.setApprovedAt(Instant.now());
 
-        Agent savedAgent = agentRepository.saveAndFlush(agent);
+        Agent saved = agentRepository.saveAndFlush(agent);
+        String authToken = agentTokenService.generateAuthToken(saved.getId());
+        String publicToken = agentTokenService.generatePublicToken(saved.getId(), saved.getPublicId());
 
-        String authToken = agentTokenService.generateAuthToken(savedAgent.getId());
-        String publicToken = agentTokenService.generatePublicToken(savedAgent.getId(), publicId);
         peerListService.incrementVersion();
-
-//        eventPublisher.publishEvent(new AgentApprovedEvent(savedAgent, authToken, publicToken));
-
-        log.info("Agent approved: {}", savedAgent.getId());
-
-        TransactionSynchronizationManager.registerSynchronization(
-                new TransactionSynchronization() {
-                    @Override
-                    public void afterCommit() {
-                        eventPublisher.publishEvent(
-                                new AgentApprovedEvent(savedAgent, authToken, publicToken)
-                        );
-                    }
-                }
-        );
+        eventPublisher.publishEvent(new AgentApprovedEvent(agentMapper.toDTO(saved), authToken, publicToken));
+        log.info("Agent approved: {}", saved.getId());
     }
 
-    /**
-     * Admin action — reject and remove pending agent.
-     */
     @Transactional
     public void rejectAgent(UUID agentId) {
         Agent agent = findByAgentId(agentId);
-
         if (agent.getState() != AgentState.PENDING_APPROVAL) {
             throw new IllegalStateException("Agent is not pending approval");
         }
 
         agentRepository.delete(agent);
         peerListService.incrementVersion();
-
         log.info("Agent rejected and removed: {}", agentId);
     }
 
-    /**
-     * Agent requests a name change — queued for admin approval.
-     */
     @Transactional
     public void requestRename(UUID agentId, String newName) {
         Agent agent = findByAgentId(agentId);
-
         if (agent.getState() != AgentState.APPROVED) {
             throw new IllegalStateException("Only approved agents can request rename");
         }
@@ -271,18 +222,14 @@ public class AgentService {
         }
 
         agent.setRequestedName(newName);
+        agent.setRenameRequestedAt(Instant.now());
         agentRepository.save(agent);
-
         log.info("Rename requested: {} -> {}", agent.getName(), newName);
     }
 
-    /**
-     * Admin action — approve pending rename request.
-     */
     @Transactional
     public void approveRename(UUID agentId) {
         Agent agent = findByAgentId(agentId);
-
         if (agent.getRequestedName() == null) {
             throw new IllegalStateException("No pending rename request");
         }
@@ -293,51 +240,38 @@ public class AgentService {
 
         agent.setName(agent.getRequestedName());
         agent.setRequestedName(null);
+        agent.setRenameRequestedAt(null);
 
-        Agent savedAgent = agentRepository.save(agent);
-
+        AgentDTO agentDTO = agentMapper.toDTO(agentRepository.save(agent));
         peerListService.incrementVersion();
-
+        eventPublisher.publishEvent(new AgentRenamedEvent(agentDTO));
         log.info("Rename approved for agent {}", agentId);
-
-        TransactionSynchronizationManager.registerSynchronization(
-                new TransactionSynchronization() {
-                    @Override
-                    public void afterCommit() {
-                        agentPushService.pushRename(savedAgent);
-                    }
-                }
-        );
     }
 
-    /**
-     * Admin action — reject pending rename request.
-     */
     @Transactional
     public void rejectRename(UUID agentId) {
         Agent agent = findByAgentId(agentId);
-
         if (agent.getRequestedName() == null) {
             throw new IllegalStateException("No pending rename request");
         }
 
         agent.setRequestedName(null);
+        agent.setRenameRequestedAt(null);
         agentRepository.save(agent);
-
         log.info("Rename rejected for agent {}", agentId);
     }
 
-    public AgentDTO toDTO(Agent agent) {
-        Instant threshold = Instant.now().minus(Duration.ofMinutes(OFFLINE_THRESHOLD_MINUTES));
-        Instant lastSeen = agent.getLastSeenAt();
+    public List<AgentDTO> getOnlineAgentsExcluding(UUID excludeId) {
+        return getOnlineAgents().stream()
+                .filter(agent -> !agent.getId().equals(excludeId))
+                .map(agentMapper::toDTO)
+                .collect(Collectors.toList());
+    }
 
-        return AgentDTO.builder()
-                .id(agent.getId())
-                .agentName(agent.getName())
-                .ipAddress(agent.getIpAddress())
-                .port(agent.getPort())
-                .online(lastSeen != null && lastSeen.isAfter(threshold))
-                .publicId(agent.getPublicId())
-                .build();
+    public List<AgentDTO> getAllAgentsExcluding(UUID excludeId) {
+        return getAllAgents().stream()
+                .filter(agent -> !agent.getId().equals(excludeId))
+                .map(agentMapper::toDTO)
+                .collect(Collectors.toList());
     }
 }

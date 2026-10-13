@@ -1,5 +1,5 @@
 package com.atamanahmet.beamlink.nexus.event;
 
-import com.atamanahmet.beamlink.nexus.domain.Agent;
+import com.atamanahmet.beamlink.nexus.dto.AgentDTO;
 
-public record AgentApprovedEvent(Agent agent, String authToken, String publicToken) {}
+public record AgentApprovedEvent(AgentDTO agentDTO, String authToken, String publicToken) {}

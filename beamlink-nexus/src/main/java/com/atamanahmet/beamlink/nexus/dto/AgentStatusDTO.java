@@ -9,8 +9,7 @@ import java.util.UUID;
 @Getter
 public class AgentStatusDTO {
     private UUID agentId;
-    private String agentName;
-    private boolean online;
-
-    private String publicToken;
+    private String ipAddress;
+    private int port;
+    private long peerVersion;
 }

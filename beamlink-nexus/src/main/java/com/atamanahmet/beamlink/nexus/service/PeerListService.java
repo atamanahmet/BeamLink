@@ -10,38 +10,31 @@ import org.springframework.stereotype.Service;
 @Service
 @RequiredArgsConstructor
 public class PeerListService {
-
+    private static final int PEER_LIST_VERSION_ID = 1;
     private final PeerListVersionRepository peerListVersionRepository;
+    private volatile long cachedVersion;
 
-    private PeerListVersion version;
-
-    @PostConstruct
-    @Transactional
-    public void init() {
-        // Fetch the existing row if it exists
-        version = peerListVersionRepository.findAll()
-                .stream()
-                .findFirst()
-                .orElseGet(() -> {
-                    // If table is empty, create the initial version
-                    PeerListVersion initial = new PeerListVersion();
-                    initial.setVersion(1L);
-                    return peerListVersionRepository.save(initial);
-                });
+    public void initialize() {
+        PeerListVersion peerListVersion = this.peerListVersionRepository.findById(1).orElseGet(this::createInitialVersion);
+        this.cachedVersion = peerListVersion.getVersion();
     }
 
     @Transactional
     public long incrementVersion() {
-        version.setVersion(version.getVersion() + 1);
-        version = peerListVersionRepository.save(version);
-        return version.getVersion();
+        PeerListVersion peerListVersion = this.peerListVersionRepository.findById(1).orElseThrow(() -> new IllegalStateException("Peer list version missing"));
+        peerListVersion.setVersion(peerListVersion.getVersion() + 1L);
+        this.cachedVersion = peerListVersion.getVersion();
+        return this.cachedVersion;
     }
 
     public long getCurrentVersion() {
-        return version.getVersion();
+        return this.cachedVersion;
     }
 
-    public boolean isPeerListOutdated(long clientVersion) {
-        return clientVersion < getCurrentVersion();
+    private PeerListVersion createInitialVersion() {
+        PeerListVersion peerListVersion = new PeerListVersion();
+        peerListVersion.setId(1);
+        peerListVersion.setVersion(1L);
+        return this.peerListVersionRepository.save(peerListVersion);
     }
 }

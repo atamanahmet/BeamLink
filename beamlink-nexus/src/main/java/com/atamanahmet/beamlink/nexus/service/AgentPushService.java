@@ -1,26 +1,34 @@
 package com.atamanahmet.beamlink.nexus.service;
 
+import com.atamanahmet.beamlink.nexus.config.RsaKeyConfig;
 import com.atamanahmet.beamlink.nexus.domain.Agent;
 import com.atamanahmet.beamlink.nexus.domain.enums.AgentState;
+import com.atamanahmet.beamlink.nexus.dto.AgentDTO;
 import com.atamanahmet.beamlink.nexus.dto.AgentRenameResponse;
 import com.atamanahmet.beamlink.nexus.dto.ApprovalPushRequest;
 import com.atamanahmet.beamlink.nexus.event.AgentApprovedEvent;
+import com.atamanahmet.beamlink.nexus.event.AgentRenamedEvent;
+import com.atamanahmet.beamlink.nexus.http.HttpSender;
+import com.atamanahmet.beamlink.nexus.mapper.AgentMapper;
 import com.atamanahmet.beamlink.nexus.repository.AgentRepository;
 import com.atamanahmet.beamlink.nexus.security.AgentTokenService;
 import com.atamanahmet.beamlink.nexus.websocket.AgentWebSocketHandler;
+import com.atamanahmet.beamlink.nexus.websocket.WsEnvelope;
+import com.atamanahmet.beamlink.nexus.websocket.enums.WsMessageType;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.event.TransactionPhase;
 import org.springframework.transaction.event.TransactionalEventListener;
-import org.springframework.web.reactive.function.client.WebClient;
 
+import java.net.URI;
+import java.net.http.HttpRequest;
 import java.util.List;
-import java.util.Map;
+import java.util.UUID;
 
 @Slf4j
 @Service
@@ -30,129 +38,138 @@ public class AgentPushService {
     private final AgentRepository agentRepository;
     private final AgentWebSocketHandler webSocketHandler;
     private final AgentTokenService agentTokenService;
-    private final WebClient.Builder webClientBuilder;
+    private final AgentMapper agentMapper;
+    private final HttpSender httpSender;
+    private final ObjectMapper objectMapper;
+    private final RsaKeyConfig rsaKeyConfig;
 
     @Transactional
-    @Scheduled(fixedDelay = 30_000)
+    @Scheduled(fixedDelay = 30000L)
     public void pushPendingApprovals() {
-        List<Agent> unpushed = agentRepository
-                .findByStateAndApprovalPushedFalse(AgentState.APPROVED);
+        List<Agent> waitingApprovals = agentRepository.findByStateAndApprovalPushedFalse(AgentState.APPROVED);
+        if (waitingApprovals.isEmpty()) return;
 
-        if (unpushed.isEmpty()) return;
+        log.info("Retrying approval push to {} agent(s)", waitingApprovals.size());
 
-        log.info("Retrying approval push to {} agent(s).", unpushed.size());
-
-        for (Agent agent : unpushed) {
+        for (Agent agent : waitingApprovals) {
             if (agent.getPublicId() == null) {
-                log.warn("Skipping approval push for agent {}, publicId is null.", agent.getId());
+                log.warn("Skipping approval push for agent {}, publicId is null", agent.getId());
                 continue;
             }
             String authToken = agentTokenService.generateAuthToken(agent.getId());
             String publicToken = agentTokenService.generatePublicToken(agent.getId(), agent.getPublicId());
-            pushApproval(agent, authToken, publicToken);
+            pushApproval(agentMapper.toDTO(agent), authToken, publicToken);
         }
     }
 
-    public void pushApproval(Agent agent, String authToken, String publicToken) {
+    public void pushApproval(AgentDTO agentDTO, String authToken, String publicToken) {
         ApprovalPushRequest payload = ApprovalPushRequest.builder()
-                .agentId(agent.getId())
-                .approvedName(agent.getName())
+                .agentId(agentDTO.getId())
+                .approvedName(agentDTO.getAgentName())
                 .authToken(authToken)
                 .publicToken(publicToken)
+                .publicId(agentDTO.getPublicId())
                 .state(AgentState.APPROVED)
+                .nexusPublicKey(rsaKeyConfig.getPublicKeyBase64())
                 .build();
 
-        if (webSocketHandler.isConnected(agent.getId())) {
-            pushViaWebSocket(agent, payload);
+        if (webSocketHandler.isConnected(agentDTO.getId())) {
+            pushApprovalViaWs(agentDTO, payload);
         } else {
-            pushViaHttp(agent, payload);
+            pushApprovalViaHttp(agentDTO, payload);
         }
     }
 
-    public void pushRename(Agent agent) {
-        if (webSocketHandler.isConnected(agent.getId())) {
-            pushRenameViaWebSocket(agent);
+    public void pushRename(AgentDTO agentDTO) {
+        if (webSocketHandler.isConnected(agentDTO.getId())) {
+            pushRenameViaWs(agentDTO);
         } else {
-            pushRenameViaHttp(agent);
+            pushRenameViaHttp(agentDTO);
         }
     }
 
-    private void pushViaWebSocket(Agent agent, ApprovalPushRequest payload) {
+    private void pushApprovalViaWs(AgentDTO agentDTO, ApprovalPushRequest payload) {
         try {
-            webSocketHandler.sendMessage(agent.getId(), Map.of(
-                    "type", "approval_push",
-                    "payload", payload));
-            markPushed(agent);
-            log.info("Approval pushed via WS to agent {}", agent.getId());
+            webSocketHandler.sendMessage(agentDTO.getId(), WsEnvelope.of(WsMessageType.APPROVAL_PUSH, payload));
+            markPushed(agentDTO.getId());
+            log.info("Approval pushed via WS to agent {}", agentDTO.getId());
         } catch (Exception e) {
-            log.warn("WS push failed for agent {}, will retry in next schedule: {}",
-                    agent.getId(), e.getMessage());
+            log.warn("WS approval push failed for agent {}, will retry: {}", agentDTO.getId(), e.getMessage());
         }
     }
 
-    private void pushViaHttp(Agent agent, ApprovalPushRequest payload) {
-        String url = buildUrl(agent, "/api/approval");
+    private void pushApprovalViaHttp(AgentDTO agentDTO, ApprovalPushRequest payload) {
+        String url = buildUrl(agentDTO, "/api/approval");
         try {
-            webClientBuilder.build()
-                    .post()
-                    .uri(url)
-                    .bodyValue(payload)
-                    .retrieve()
-                    .toBodilessEntity()
-                    .block();
-            markPushed(agent);
-            log.info("Approval pushed via HTTP to agent {} at {}", agent.getId(), url);
+            String body = objectMapper.writeValueAsString(payload);
+            HttpRequest request = HttpRequest.newBuilder()
+                    .uri(URI.create(url))
+                    .header("Content-Type", "application/json")
+                    .POST(HttpRequest.BodyPublishers.ofString(body))
+                    .build();
+
+            httpSender.send(request);
+            markPushed(agentDTO.getId());
+            log.info("Approval pushed via HTTP to agent {} at {}", agentDTO.getId(), url);
         } catch (Exception e) {
-            log.warn("HTTP push failed for agent {} at {}, will retry in next schedule: {}",
-                    agent.getId(), url, e.getMessage());
+            log.warn("HTTP approval push failed for agent {} at {}, will retry: {}", agentDTO.getId(), url, e.getMessage());
         }
     }
 
-    private void pushRenameViaWebSocket(Agent agent) {
+    private void pushRenameViaWs(AgentDTO agentDTO) {
         try {
-            webSocketHandler.sendMessage(agent.getId(), Map.of(
-                    "type", "rename_request",
-                    "payload", AgentRenameResponse.builder()
-                            .agentName(agent.getName())
-                            .build()));
-            log.info("Rename pushed via WS to agent {}: {}", agent.getId(), agent.getName());
-        } catch (Exception e) {
-            log.warn("WS rename push failed for agent {}, falling back to HTTP: {}",
-                    agent.getId(), e.getMessage());
-            pushRenameViaHttp(agent);
-        }
-    }
-
-    private void pushRenameViaHttp(Agent agent) {
-        String url = buildUrl(agent, "/api/agents/rename");
-        try {
-            webClientBuilder.build()
-                    .post()
-                    .uri(url)
-                    .bodyValue(AgentRenameResponse.builder()
-                            .agentName(agent.getName())
+            webSocketHandler.sendMessage(
+                    agentDTO.getId(),
+                    WsEnvelope.of(WsMessageType.RENAME_PUSH, AgentRenameResponse.builder()
+                            .agentName(agentDTO.getAgentName())
                             .build())
-                    .retrieve()
-                    .toBodilessEntity()
-                    .block();
-            log.info("Rename pushed via HTTP to agent {} at {}", agent.getId(), url);
+            );
+            log.info("Rename pushed via WS to agent {}: {}", agentDTO.getId(), agentDTO.getAgentName());
         } catch (Exception e) {
-            log.warn("HTTP rename push failed for agent {} at {}: {}",
-                    agent.getId(), url, e.getMessage());
+            log.warn("WS rename push failed for agent {}, falling back to HTTP: {}", agentDTO.getId(), e.getMessage());
+            pushRenameViaHttp(agentDTO);
         }
     }
 
-    public void markPushed(Agent agent) {
-        agentRepository.markApprovalPushed(agent.getId());
+    private void pushRenameViaHttp(AgentDTO agentDTO) {
+        String url = buildUrl(agentDTO, "/api/agents/rename");
+        try {
+            String body = objectMapper.writeValueAsString(
+                    AgentRenameResponse.builder()
+                            .agentName(agentDTO.getAgentName())
+                            .build()
+            );
+            HttpRequest request = HttpRequest.newBuilder()
+                    .uri(URI.create(url))
+                    .header("Content-Type", "application/json")
+                    .POST(HttpRequest.BodyPublishers.ofString(body))
+                    .build();
+
+            httpSender.send(request);
+            log.info("Rename pushed via HTTP to agent {} at {}", agentDTO.getId(), url);
+        } catch (Exception e) {
+            log.warn("HTTP rename push failed for agent {} at {}: {}", agentDTO.getId(), url, e.getMessage());
+        }
     }
 
-    private String buildUrl(Agent agent, String path) {
-        return "http://" + agent.getIpAddress() + ":" + agent.getPort() + path;
+    public void markPushed(UUID agentId) {
+        agentRepository.markApprovalPushed(agentId);
+    }
+
+    private String buildUrl(AgentDTO agentDTO, String path) {
+        return "http://" + agentDTO.getIpAddress() + ":" + agentDTO.getPort() + path;
     }
 
     @Async
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
     public void onAgentApproved(AgentApprovedEvent event) {
-        pushApproval(event.agent(), event.authToken(), event.publicToken());
+        pushApproval(event.agentDTO(), event.authToken(), event.publicToken());
+        webSocketHandler.broadcastAgentJoined(event.agentDTO());
+    }
+
+    @Async
+    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
+    public void onAgentRenamed(AgentRenamedEvent event) {
+        pushRename(event.agentDTO());
     }
 }

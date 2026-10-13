@@ -1,19 +1,19 @@
 package com.atamanahmet.beamlink.nexus.dto;
 
 import com.atamanahmet.beamlink.nexus.domain.enums.AgentState;
-import lombok.*;
+import lombok.Builder;
+import lombok.Data;
 
 import java.util.UUID;
 
-@Getter
-@Setter
+@Data
 @Builder
-@NoArgsConstructor
-@AllArgsConstructor
 public class ApprovalPushRequest {
     private UUID agentId;
+    private String approvedName;
     private String authToken;
     private String publicToken;
-    private String approvedName;
+    private UUID publicId;
     private AgentState state;
+    private String nexusPublicKey;
 }

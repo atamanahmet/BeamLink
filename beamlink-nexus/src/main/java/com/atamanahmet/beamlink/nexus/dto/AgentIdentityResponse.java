@@ -17,5 +17,6 @@ public class AgentIdentityResponse {
     private String agentName;
     private AgentState state;
     private String authToken;
+    private UUID publicId;
     private String publicToken;
 }

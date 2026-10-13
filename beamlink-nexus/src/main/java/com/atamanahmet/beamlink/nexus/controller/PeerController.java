@@ -1,19 +1,22 @@
 package com.atamanahmet.beamlink.nexus.controller;
 
-import com.atamanahmet.beamlink.nexus.config.NexusConfig;
 import com.atamanahmet.beamlink.nexus.domain.Agent;
+import com.atamanahmet.beamlink.nexus.domain.enums.AgentState;
 import com.atamanahmet.beamlink.nexus.dto.AgentDTO;
+import com.atamanahmet.beamlink.nexus.dto.PeerDTO;
+import com.atamanahmet.beamlink.nexus.dto.PeerListResponse;
+import com.atamanahmet.beamlink.nexus.mapper.AgentMapper;
+import com.atamanahmet.beamlink.nexus.mapper.PeerMapper;
 import com.atamanahmet.beamlink.nexus.service.AgentService;
 import com.atamanahmet.beamlink.nexus.service.PeerListService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
-import java.util.HashMap;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
-import java.util.stream.Collectors;
 
 @RestController
 @RequestMapping("/api/nexus/peers")
@@ -22,74 +25,42 @@ public class PeerController {
 
         private final PeerListService peerListService;
         private final AgentService agentService;
-        private final NexusConfig nexusConfig;
+        private final AgentMapper agentMapper;
+        private final PeerMapper peerMapper;
 
-        private static final UUID NEXUS_ID = UUID.fromString("00000000-0000-0000-0000-000000000000");
-        private static final UUID NEXUS_PUBLIC_ID = UUID.fromString("00000000-0000-0000-0000-000000000001");
-
-        /**
-         * Get list of online agents (excluding requesting agent)
-         */
         @GetMapping("/online")
-        public ResponseEntity<List<AgentDTO>> getOnlinePeers(
-                @RequestParam(required = false) UUID excludeAgentId) {
-
-                List<AgentDTO> peers = agentService.getOnlineAgents().stream()
-                        .filter(agent -> !agent.getId().equals(excludeAgentId))
-                        .map(agentService::toDTO)
-                        .collect(Collectors.toList());
-
-                return ResponseEntity.ok(peers);
+        public ResponseEntity<List<AgentDTO>> getOnlinePeers(@RequestParam(required = false) UUID excludeAgentId) {
+                return ResponseEntity.ok(agentService.getOnlineAgentsExcluding(excludeAgentId));
         }
 
-        /**
-         * Get list of all agents (excluding requesting agent)
-         */
         @GetMapping
-        public ResponseEntity<Map<String, Object>> getAllPeers(
-                @RequestParam(required = false) UUID excludeAgentId) {
+        public ResponseEntity<PeerListResponse> getAllPeers(@RequestParam(required = false) UUID excludeAgentId) {
+                List<Agent> agents = agentService.getAgentsByState(AgentState.APPROVED).stream()
+                        .filter(a -> !a.getId().equals(excludeAgentId))
+                        .toList();
 
-                List<AgentDTO> allAgents = agentService.getAllAgents().stream()
-                        .filter(agent -> !agent.getId().equals(excludeAgentId))
-                        .map(agentService::toDTO)
-                        .collect(Collectors.toList());
+                List<PeerDTO> peers = new ArrayList<>();
+                peers.add(peerMapper.nexusPeer());
+                agents.stream()
+                        .map(peerMapper::fromAgent)
+                        .forEach(peers::add);
 
-                allAgents.add(0, buildNexusPeer());
-
-                Map<String, Object> response = new HashMap<>();
-                response.put("peers", allAgents);
-                response.put("version", peerListService.getCurrentVersion());
-
-                return ResponseEntity.ok(response);
+                return ResponseEntity.ok(
+                        PeerListResponse.builder()
+                                .peers(peers)
+                                .version(peerListService.getCurrentVersion())
+                                .build()
+                );
         }
 
-        /**
-         * Get specific agent address
-         */
         @GetMapping("/{agentId}/address")
         public ResponseEntity<Map<String, Object>> getAgentAddress(@PathVariable UUID agentId) {
-                Agent agent = agentService.findByAgentId(agentId);
-
-                Map<String, Object> response = new HashMap<>();
-                response.put("ip", agent.getIpAddress());
-                response.put("port", agent.getPort());
-
-                return ResponseEntity.ok(response);
+                AgentDTO agent = agentMapper.toDTO(agentService.findByAgentId(agentId));
+                return ResponseEntity.ok(Map.of("ip", agent.getIpAddress(), "port", agent.getPort()));
         }
 
         @GetMapping("/version")
         public ResponseEntity<Map<String, Long>> getPeerListVersion() {
                 return ResponseEntity.ok(Map.of("version", peerListService.getCurrentVersion()));
-        }
-
-        private AgentDTO buildNexusPeer() {
-                return AgentDTO.builder()
-                        .id(NEXUS_ID)
-                        .agentName(nexusConfig.getName())
-                        .ipAddress(nexusConfig.getIpAddress())
-                        .port(nexusConfig.getNexusPort())
-                        .publicId(NEXUS_PUBLIC_ID)
-                        .online(true)
-                        .build();
         }
 }

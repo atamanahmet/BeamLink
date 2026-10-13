@@ -7,7 +7,7 @@ import lombok.Data;
  */
 @Data
 public class ApprovalCheckResponse {
-    private String status;       // "pending" or "approved" TODO: make enum
+    private String status;
     private String authToken;
     private String publicToken;
 }
