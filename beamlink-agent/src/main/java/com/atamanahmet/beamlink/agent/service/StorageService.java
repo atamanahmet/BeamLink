@@ -1,6 +1,7 @@
 package com.atamanahmet.beamlink.agent.service;
 
 import com.atamanahmet.beamlink.agent.config.StorageConfig;
+import com.atamanahmet.beamlink.agent.constants.TransferConstants;
 import com.atamanahmet.beamlink.agent.domain.FileTransfer;
 import com.atamanahmet.beamlink.agent.domain.Setting;
 import com.atamanahmet.beamlink.agent.domain.enums.SettingKey;
@@ -24,9 +25,8 @@ import java.nio.file.StandardCopyOption;
 public class StorageService {
 
     private final StorageConfig storageConfig;
-    private final SettingsRepository settingsRepository;
-    private static final int BUFFER_SIZE = 8192; // 8mb
-    private static final int WRITE_BUFFER_SIZE = 65536;
+    private final SettingsService settingsService;
+    private static final int BUFFER_SIZE = TransferConstants.CHUNK_SIZE;
     private static final long DISK_BUFFER_BYTES = 100L * 1024 * 1024;
 
 
@@ -51,15 +51,15 @@ public class StorageService {
 
     public void updateUploadsDir(Path newPath) {
         createDirectory(newPath);
-        settingsRepository.save(new Setting(SettingKey.STORAGE_UPLOAD_DIR, newPath.toString().replace("\\", "/")));
+        settingsService.set(SettingKey.STORAGE_UPLOAD_DIR, newPath.toString());
         this.uploadsDir = newPath;
         log.info("Uploads directory updated to: {}", newPath);
     }
 
 
     private Path resolveUploadsDir() {
-        return settingsRepository.findByKey(SettingKey.STORAGE_UPLOAD_DIR)
-                .map(s -> Path.of(s.getValue().replace("\\", "/")))
+        return settingsService.get(SettingKey.STORAGE_UPLOAD_DIR)
+                .map(Path::of)
                 .orElseGet(() -> {
                     Path fallback = storageConfig.getDefaultUploadsDir();
                     log.warn("No upload directory configured in DB, using default: {}", fallback);
@@ -73,8 +73,8 @@ public class StorageService {
      * to StorageConfig default until a STORAGE_TEMP_DIR setting is persisted.
      */
     private Path resolveTempDir() {
-        return settingsRepository.findByKey(SettingKey.STORAGE_TEMP_DIR)
-                .map(s -> Path.of(s.getValue().replace("\\", "/")))
+        return settingsService.get(SettingKey.STORAGE_TEMP_DIR)
+                .map(Path::of)
                 .orElseGet(() -> {
                     Path fallback = storageConfig.getDefaultTempDir();
                     log.warn("No temp directory configured in DB, using default: {}", fallback);
@@ -158,7 +158,7 @@ public class StorageService {
         byte[] buffer = new byte[BUFFER_SIZE];
 
         try (BufferedOutputStream out = new BufferedOutputStream(
-                new FileOutputStream(tmpPath.toFile()), WRITE_BUFFER_SIZE)) {
+                new FileOutputStream(tmpPath.toFile()), BUFFER_SIZE)) {
             int bytesRead;
             while ((bytesRead = inputStream.read(buffer)) != -1) {
                 out.write(buffer, 0, bytesRead);

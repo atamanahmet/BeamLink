@@ -19,22 +19,20 @@ import java.util.UUID;
 @RequiredArgsConstructor
 public class TransferManagementController {
 
-
     private final TransferDispatchService dispatchService;
     private final TransferQueryService queryService;
     private final TransferManagementService managementService;
+
+    @PostMapping("/send")
+    public ResponseEntity<List<DispatchResultItem>> send(
+            @RequestBody InitiateSendRequest request) {
+        return ResponseEntity.ok(dispatchService.dispatch(request));
+    }
 
     @GetMapping
     public ResponseEntity<List<TransferSummary>> listAll() {
         return ResponseEntity.ok(queryService.listAll());
     }
-
-    @PostMapping("/dispatch")
-    public ResponseEntity<List<DispatchResultItem>> dispatch(
-            @RequestBody InitiateSendRequest request) {
-        return ResponseEntity.ok(dispatchService.dispatch(request));
-    }
-
 
     @GetMapping("/single/{id}")
     public ResponseEntity<TransferSummary> getSingle(@PathVariable UUID id) {
@@ -61,6 +59,9 @@ public class TransferManagementController {
         return ResponseEntity.ok(queryService.getDirectoryFiles(id));
     }
 
+    /**
+     * SINGLE management
+     */
     @PostMapping("/single/{id}/pause")
     public ResponseEntity<Void> pauseSingle(@PathVariable UUID id) {
         managementService.pauseSingle(id);
@@ -84,6 +85,9 @@ public class TransferManagementController {
         return ResponseEntity.noContent().build();
     }
 
+    /**
+     * BATCH management
+     */
     @PostMapping("/batch/{id}/pause")
     public ResponseEntity<Void> pauseBatch(@PathVariable UUID id) {
         managementService.pauseBatch(id);
@@ -107,6 +111,9 @@ public class TransferManagementController {
         return ResponseEntity.noContent().build();
     }
 
+    /**
+     * DIRECTORY management
+     */
     @PostMapping("/directory/{id}/pause")
     public ResponseEntity<Void> pauseDirectory(@PathVariable UUID id) {
         managementService.pauseDirectory(id);
@@ -130,6 +137,9 @@ public class TransferManagementController {
         return ResponseEntity.noContent().build();
     }
 
+    /**
+     * Resume can fail if target is unreachable, handle consistently across all types.
+     */
     private ResponseEntity<Void> handleResume(Runnable action) {
         try {
             action.run();

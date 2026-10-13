@@ -12,6 +12,8 @@ import java.util.UUID;
 public class PrepareReceiveRequest {
     private UUID transferId;
     private UUID sourceAgentId;
+    private String sourceIp;
+    private Integer sourcePort;
     private String fileName;
     private long fileSize;
 }

@@ -6,15 +6,18 @@ import com.atamanahmet.beamlink.agent.domain.FileTransfer;
 import com.atamanahmet.beamlink.agent.domain.enums.GroupTransferStatus;
 import com.atamanahmet.beamlink.agent.domain.enums.TransferStatus;
 import com.atamanahmet.beamlink.agent.exception.FileTransferException;
+import com.atamanahmet.beamlink.agent.http.TransferHttpClient;
 import com.atamanahmet.beamlink.agent.repository.BatchTransferRepository;
 import com.atamanahmet.beamlink.agent.repository.DirectoryTransferRepository;
 import com.atamanahmet.beamlink.agent.repository.FileTransferRepository;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.UUID;
 
+@Slf4j
 @Service
 @RequiredArgsConstructor
 public class TransferManagementService {
@@ -25,8 +28,9 @@ public class TransferManagementService {
     private final BatchTransferRepository batchTransferRepository;
     private final DirectoryTransferRepository directoryTransferRepository;
     private final FileTransferRepository fileTransferRepository;
-    private final TransferAsyncSender asyncSender;
-    private final AgentService agentService;
+    private final TransferSender asyncSender;
+    private final TransferHttpClient transferHttpClient;
+
 
     public void pauseSingle(UUID id) {
         fileTransferRepository.findByTransferId(id).ifPresent(ft -> {
@@ -46,6 +50,47 @@ public class TransferManagementService {
 
     public void cancelSingle(UUID id) {
         transferSenderService.cancel(id);
+        fileTransferRepository.findByTransferId(id).ifPresent(this::notifyPeerCancel);
+    }
+
+    /** Stops queue loop, stops active child at next chunk boundary. */
+    @Transactional
+    public void cancelBatch(UUID id) {
+        BatchTransfer bt = batchTransferRepository.findById(id)
+                .orElseThrow(() -> new FileTransferException("Batch not found: " + id, null));
+
+        bt.setStatus(GroupTransferStatus.CANCELLED);
+        batchTransferRepository.save(bt);
+
+        fileTransferRepository.findByBatchTransferId(id)
+                .forEach(ft -> {
+                    if (ft.getStatus() == TransferStatus.ACTIVE
+                            || ft.getStatus() == TransferStatus.PAUSED) {
+                        ft.setStatus(TransferStatus.CANCELLED);
+                        fileTransferRepository.save(ft);
+                    }
+                    notifyPeerCancel(ft);
+                });
+    }
+
+    /** Stops queue loop, stops active child at next chunk boundary. */
+    @Transactional
+    public void cancelDirectory(UUID id) {
+        DirectoryTransfer dt = directoryTransferRepository.findById(id)
+                .orElseThrow(() -> new FileTransferException("Directory transfer not found: " + id, null));
+
+        dt.setStatus(GroupTransferStatus.CANCELLED);
+        directoryTransferRepository.save(dt);
+
+        fileTransferRepository.findByDirectoryTransferId(id)
+                .forEach(ft -> {
+                    if (ft.getStatus() == TransferStatus.ACTIVE
+                            || ft.getStatus() == TransferStatus.PAUSED) {
+                        ft.setStatus(TransferStatus.CANCELLED);
+                        fileTransferRepository.save(ft);
+                    }
+                    notifyPeerCancel(ft);
+                });
     }
 
     public void deleteSingle(UUID id) {
@@ -75,22 +120,6 @@ public class TransferManagementService {
 
     public void resumeBatch(UUID id) {
         batchSenderService.resume(id);
-    }
-
-    /** Stops queue loop, stops active child at next chunk boundary. */
-    @Transactional
-    public void cancelBatch(UUID id) {
-        BatchTransfer bt = batchTransferRepository.findById(id)
-                .orElseThrow(() -> new FileTransferException("Batch not found: " + id, null));
-
-        bt.setStatus(GroupTransferStatus.CANCELLED);
-        batchTransferRepository.save(bt);
-
-        fileTransferRepository.findByBatchTransferIdAndStatus(id, TransferStatus.ACTIVE)
-                .forEach(ft -> {
-                    ft.setStatus(TransferStatus.CANCELLED);
-                    fileTransferRepository.save(ft);
-                });
     }
 
     @Transactional
@@ -131,22 +160,6 @@ public class TransferManagementService {
         directorySenderService.resume(id);
     }
 
-    /** Stops queue loop, stops active child at next chunk boundary. */
-    @Transactional
-    public void cancelDirectory(UUID id) {
-        DirectoryTransfer dt = directoryTransferRepository.findById(id)
-                .orElseThrow(() -> new FileTransferException("Directory transfer not found: " + id, null));
-
-        dt.setStatus(GroupTransferStatus.CANCELLED);
-        directoryTransferRepository.save(dt);
-
-        fileTransferRepository.findByDirectoryTransferIdAndStatus(id, TransferStatus.ACTIVE)
-                .forEach(ft -> {
-                    ft.setStatus(TransferStatus.CANCELLED);
-                    fileTransferRepository.save(ft);
-                });
-    }
-
     @Transactional
     public void deleteDirectory(UUID id) {
         DirectoryTransfer dt = directoryTransferRepository.findById(id)
@@ -158,5 +171,32 @@ public class TransferManagementService {
         }
 
         directoryTransferRepository.delete(dt);
+    }
+
+    /**
+     * Notifies peer node to cancel their side. Fire-and-forget, local cancel already done.
+     */
+    private void notifyPeerCancel(FileTransfer ft) {
+        String peerIp;
+        int peerPort;
+
+        if (ft.getTargetIp() != null && !ft.getTargetIp().isBlank()
+                && ft.getTargetPort() != null) {
+            peerIp = ft.getTargetIp();
+            peerPort = ft.getTargetPort();
+        } else if (ft.getSourceIp() != null && !ft.getSourceIp().isBlank()
+                && ft.getSourcePort() != null) {
+            peerIp = ft.getSourceIp();
+            peerPort = ft.getSourcePort();
+        } else {
+            log.warn("No peer address stored for transfer {}, skipping cancel notify", ft.getTransferId());
+            return;
+        }
+
+        try {
+            transferHttpClient.notifyCancelToPeer(peerIp, peerPort, ft.getTransferId());
+        } catch (Exception e) {
+            log.warn("Could not notify peer of cancel for transfer {}: {}", ft.getTransferId(), e.getMessage());
+        }
     }
 }

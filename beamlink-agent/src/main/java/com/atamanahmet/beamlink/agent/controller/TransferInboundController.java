@@ -8,6 +8,7 @@ import com.atamanahmet.beamlink.agent.service.ChunkReceiverService;
 import com.atamanahmet.beamlink.agent.service.TransferSenderService;
 import jakarta.servlet.http.HttpServletRequest;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
@@ -18,14 +19,14 @@ import java.io.IOException;
 import java.util.Map;
 import java.util.UUID;
 
+@Slf4j
 @RestController
 @RequestMapping("/api/transfers")
 @RequiredArgsConstructor
 public class TransferInboundController {
 
-    private static final Logger log = LoggerFactory.getLogger(TransferInboundController.class);
-
     private final ChunkReceiverService receiverService;
+    private final TransferSenderService senderService;
 
     /**
      * Source registers the transfer before sending any chunks, target prepares partial file on disk
@@ -41,6 +42,8 @@ public class TransferInboundController {
                 null,
                 request.getFileSize()
         );
+        transfer.setSourceIp(request.getSourceIp());
+        transfer.setSourcePort(request.getSourcePort());
         transfer.setStatus(TransferStatus.ACTIVE);
 
         receiverService.prepareReceive(transfer);
@@ -119,5 +122,15 @@ public class TransferInboundController {
         } catch (Exception e) {
             throw new FileTransferException("Invalid Content-Range header: " + contentRange, e);
         }
+    }
+
+    /**
+     * Peer notifies us to cancel our side of the transfer
+     */
+    @DeleteMapping("/{transferId}/cancel-notify")
+    public ResponseEntity<Void> cancelNotify(@PathVariable UUID transferId) {
+        receiverService.cancelReceive(transferId);
+        senderService.cancel(transferId);
+        return ResponseEntity.ok().build();
     }
 }

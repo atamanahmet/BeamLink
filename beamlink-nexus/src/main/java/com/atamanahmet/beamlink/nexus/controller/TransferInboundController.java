@@ -42,6 +42,8 @@ public class TransferInboundController {
                 null,
                 request.getFileSize()
         );
+        transfer.setSourceIp(request.getSourceIp());
+        transfer.setSourcePort(request.getSourcePort());
         transfer.setStatus(TransferStatus.ACTIVE);
 
         receiverService.prepareReceive(transfer);
@@ -106,5 +108,15 @@ public class TransferInboundController {
         } catch (Exception e) {
             throw new FileTransferException("Invalid Content-Range header: " + contentRange, e);
         }
+    }
+
+    /**
+     * Peer notifies us to cancel our side of the transfer
+     */
+    @DeleteMapping("/{transferId}/cancel-notify")
+    public ResponseEntity<Void> cancelNotify(@PathVariable UUID transferId) {
+        receiverService.cancelReceive(transferId);
+        senderService.cancel(transferId);
+        return ResponseEntity.ok().build();
     }
 }
