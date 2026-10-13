@@ -29,8 +29,8 @@ ROOT_DIR        := $(shell pwd)
 NEXUS_JAVA_DIR  := $(ROOT_DIR)/beamlink-nexus
 AGENT_JAVA_DIR  := $(ROOT_DIR)/beamlink-agent
 
-NEXUS_UI_DIR    := $(ROOT_DIR)/frontend/nexus
-AGENT_UI_DIR    := $(ROOT_DIR)/frontend/agent
+NEXUS_UI_DIR    := $(ROOT_DIR)/frontend/apps/nexus
+AGENT_UI_DIR    := $(ROOT_DIR)/frontend/apps/peer
 
 # Shared runtime resources - gitignored, populated by this Makefile
 JRE_DIR         := $(ROOT_DIR)/resources/jre
