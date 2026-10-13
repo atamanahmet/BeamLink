@@ -1,0 +1,11 @@
+{
+  "schemaVersion": 1,
+  "id": "ocean",
+  "name": "Ocean",
+  "seeds": {
+    "primary": "#0891B2",
+    "secondary": "#2563EB",
+    "tertiary": "#14B8A6",
+    "neutral": "#64748B"
+  }
+}

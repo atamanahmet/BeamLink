@@ -1,0 +1,11 @@
+{
+  "schemaVersion": 1,
+  "id": "ember",
+  "name": "Ember",
+  "seeds": {
+    "primary": "#EA580C",
+    "secondary": "#DB2777",
+    "tertiary": "#F59E0B",
+    "neutral": "#78716C"
+  }
+}

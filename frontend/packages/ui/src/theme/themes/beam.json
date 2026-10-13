@@ -1,0 +1,11 @@
+{
+  "schemaVersion": 1,
+  "id": "beam",
+  "name": "Beam",
+  "seeds": {
+    "primary": "#2563EB",
+    "secondary": "#7C3AED",
+    "tertiary": "#F59E0B",
+    "neutral": "#64748B"
+  }
+}

@@ -1,0 +1,11 @@
+{
+  "schemaVersion": 1,
+  "id": "forest",
+  "name": "Forest",
+  "seeds": {
+    "primary": "#16A34A",
+    "secondary": "#0D9488",
+    "tertiary": "#CA8A04",
+    "neutral": "#6B7C72"
+  }
+}

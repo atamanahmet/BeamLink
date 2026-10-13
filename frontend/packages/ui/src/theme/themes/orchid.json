@@ -1,0 +1,11 @@
+{
+  "schemaVersion": 1,
+  "id": "orchid",
+  "name": "Orchid",
+  "seeds": {
+    "primary": "#9333EA",
+    "secondary": "#DB2777",
+    "tertiary": "#06B6D4",
+    "neutral": "#7A6F8E"
+  }
+}
