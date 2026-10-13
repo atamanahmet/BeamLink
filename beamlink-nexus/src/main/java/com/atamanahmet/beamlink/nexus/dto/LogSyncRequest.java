@@ -18,5 +18,6 @@ public class LogSyncRequest {
     private String toAgentName;
     private String filename;
     private long fileSize;
+    private double averageSpeedMbps;
     private Instant timestamp;
 }

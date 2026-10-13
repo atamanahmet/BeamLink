@@ -15,10 +15,8 @@ import lombok.Setter;
 public class PeerListVersion {
 
         @Id
-        @GeneratedValue(strategy = GenerationType.IDENTITY)
-        @Column(columnDefinition = "INTEGER")
-        private Long id;
-
+        @Column
+        private Integer id = 1;
         private Long version = 1L;
 
 }

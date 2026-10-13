@@ -5,6 +5,7 @@ import lombok.AllArgsConstructor;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
+import org.hibernate.annotations.JdbcTypeCode;
 
 import java.time.Instant;
 import java.util.UUID;
@@ -21,10 +22,11 @@ import java.util.UUID;
 public class PendingRename {
     @Id
     @GeneratedValue(strategy = GenerationType.UUID)
-    @Column(columnDefinition = "uuid")
+    @JdbcTypeCode(12)
     private UUID id;
 
-    private String agentId;
+    @JdbcTypeCode(12)
+    private UUID agentId;
 
     private String currentName;
 

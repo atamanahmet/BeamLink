@@ -2,6 +2,7 @@ package com.atamanahmet.beamlink.nexus.domain;
 
 import jakarta.persistence.*;
 import lombok.*;
+import org.hibernate.annotations.JdbcTypeCode;
 
 import java.time.Instant;
 import java.util.UUID;
@@ -18,22 +19,19 @@ import java.util.UUID;
 @Builder
 public class TransferLog {
     @Id
-    @Column(columnDefinition = "uuid")
+    @JdbcTypeCode(12)
     private UUID id;
-
-    @Column(columnDefinition = "uuid")
+    @JdbcTypeCode(12)
     private UUID fromAgentId;
-
     private String fromAgentName;
-
-    @Column(columnDefinition = "uuid")
+    @JdbcTypeCode(12)
     private UUID toAgentId;
-
     private String toAgentName;
-
     private String filename;
-
     private long fileSize;
+
+    @Column(nullable = false)
+    private double averageSpeedMbps;
 
     @Column(name = "transferred_at")
     private Instant timestamp;
