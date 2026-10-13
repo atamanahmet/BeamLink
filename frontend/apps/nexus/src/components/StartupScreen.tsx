@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { usePlatform } from "@beamlink/platform";
 import icon from "../assets/icon.png";
 
 type Status = "starting" | "ready" | "error";
@@ -8,6 +9,7 @@ interface Props {
 }
 
 export default function StartupScreen({ onReady }: Props) {
+  const platform = usePlatform();
   const [status, setStatus] = useState<Status>("starting");
   const [errorMsg, setErrorMsg] = useState("");
 
@@ -26,9 +28,9 @@ export default function StartupScreen({ onReady }: Props) {
       }
     };
 
-    window.electronAPI.getBackendStatus().then(handle);
-    window.electronAPI.onBackendStatus(handle);
-  }, []);
+    void platform.getBackendStatus().then(handle);
+    void platform.onBackendStatus(handle);
+  }, [platform]);
 
   return (
     <div style={styles.overlay}>

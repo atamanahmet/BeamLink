@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from "react";
+import { usePlatform } from "@beamlink/platform";
 import { useAuth } from "../context/AuthContext";
 import { useAgent, type Peer } from "../context/AgentContext";
 import { useTransfer } from "../context/TransferContext";
@@ -9,6 +10,7 @@ interface FileUploadProps {
 }
 
 export const FileUpload = ({ onTransferStarted }: FileUploadProps) => {
+  const platform = usePlatform();
   const { isAuthenticated } = useAuth();
   const { getPeers } = useAgent();
   const { initiateDispatch } = useTransfer();
@@ -113,7 +115,7 @@ export const FileUpload = ({ onTransferStarted }: FileUploadProps) => {
     const files = Array.from(e.dataTransfer.files);
     if (files.length === 0) return;
 
-    const paths = window.electronAPI.getPathForFiles(files);
+    const paths = await platform.getPathForFiles(files);
     if (paths.length > 0) {
       await dispatch(paths);
     } else {

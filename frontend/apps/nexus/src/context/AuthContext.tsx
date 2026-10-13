@@ -1,5 +1,6 @@
 import { createContext, useContext, useState, useEffect, useRef } from "react";
 import axios, { type AxiosInstance } from "axios";
+import { usePlatform } from "@beamlink/platform";
 
 interface AuthContextType {
   isAuthenticated: boolean;
@@ -14,6 +15,7 @@ interface AuthContextType {
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
+  const platform = usePlatform();
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [isBackendReady, setIsBackendReady] = useState(false);
   const [backendError, setBackendError] = useState<string | null>(null);
@@ -42,7 +44,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   const tokenRef = useRef<string | null>(null);
 
   useEffect(() => {
-    window.electronAPI?.onBackendStatus((data) => {
+    void platform.onBackendStatus((data) => {
       if (data.status === "ready" && data.backendUrl) {
         if (!import.meta.env.DEV) {
           apiClientRef.current.defaults.baseURL = `${data.backendUrl}/api/nexus`;
@@ -53,7 +55,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         setBackendError(data.message ?? "Backend failed to start.");
       }
     });
-  }, []);
+  }, [platform]);
 
   const login = async (username: string, password: string) => {
     username = username.trim();
