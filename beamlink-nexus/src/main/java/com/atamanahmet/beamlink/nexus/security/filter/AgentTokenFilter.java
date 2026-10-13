@@ -7,6 +7,7 @@ import com.atamanahmet.beamlink.nexus.security.AgentTokenService;
 import com.atamanahmet.beamlink.nexus.security.enums.Role;
 import com.atamanahmet.beamlink.nexus.security.enums.TokenType;
 import com.atamanahmet.beamlink.nexus.exception.InvalidTokenException;
+import com.atamanahmet.beamlink.nexus.service.NexusService;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.Cookie;
@@ -32,6 +33,7 @@ public class AgentTokenFilter extends OncePerRequestFilter {
 
     private final AgentTokenService agentTokenService;
     private final AgentRepository agentRepository;
+    private final NexusService nexusService;
 
     @Override
     protected void doFilterInternal(HttpServletRequest request,
@@ -57,6 +59,7 @@ public class AgentTokenFilter extends OncePerRequestFilter {
             case ADMIN -> setAdminAuthentication(token);
             case AGENT_AUTH -> setAgentAuthAuthentication(token);
             case AGENT_PUBLIC -> setAgentPublicAuthentication(token);
+            case NEXUS -> setNexusAuthentication(token);
         }
     }
 
@@ -73,7 +76,9 @@ public class AgentTokenFilter extends OncePerRequestFilter {
             if (cookieToken != null) return cookieToken;
         }
 
-        return request.getHeader("X-Auth-Token");
+        String authToken = request.getHeader("X-Auth-Token");
+
+        return authToken != null ? authToken : request.getHeader("X-Public-Token");
     }
 
     /**
@@ -89,6 +94,20 @@ public class AgentTokenFilter extends OncePerRequestFilter {
                         List.of(new SimpleGrantedAuthority(Role.ADMIN.getAuthority()))
                 )
         );
+    }
+
+    private void setNexusAuthentication(String token) {
+        UUID claimedId = UUID.fromString(agentTokenService.extractSubject(token));
+
+        if (!claimedId.equals(nexusService.getNexusId())) {
+            log.warn("Nexus token subject {} does not match known nexus id", claimedId);
+        } else {
+            SecurityContextHolder.getContext().setAuthentication(
+                    new UsernamePasswordAuthenticationToken(
+                            claimedId,
+                            null,
+                            List.of(new SimpleGrantedAuthority(Role.AGENT.getAuthority()))));
+        }
     }
 
     /**

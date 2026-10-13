@@ -6,7 +6,6 @@ import com.atamanahmet.beamlink.nexus.repository.NexusRepository;
 import com.atamanahmet.beamlink.nexus.security.AgentTokenService;
 import com.auth0.jwt.interfaces.DecodedJWT;
 import jakarta.annotation.PostConstruct;
-import lombok.Getter;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -45,8 +44,7 @@ public class NexusService {
 
         if (nexus.getPublicToken() == null || !isRsaToken(nexus.getPublicToken())) {
             nexus.setPublicToken(
-                    agentTokenService.generatePublicToken(nexus.getNexusId(), nexus.getNexusId())
-            );
+                    agentTokenService.generatePublicToken(nexus.getNexusId(), nexus.getNexusId()));
             persist();
             log.info("Nexus peer public token generated.");
         }
@@ -103,9 +101,13 @@ public class NexusService {
         return nexus.getNexusId();
     }
 
-    public String getNexusIp() {return nexus.getIpAddress();}
+    public String getNexusIp() {
+        return nexus.getIpAddress();
+    }
 
-    public Integer getNexusPort() {return nexus.getPort();}
+    public Integer getNexusPort() {
+        return nexus.getPort();
+    }
 
     public String getNexusName() {
         return nexus.getNexusName();
