@@ -18,7 +18,7 @@ import java.util.List;
 @RestController
 @RequestMapping("/api/nexus/admin/logs")
 @RequiredArgsConstructor
-public class LogController {
+public class NexusLogController {
 
     private final TransferLogService transferLogService;
 
