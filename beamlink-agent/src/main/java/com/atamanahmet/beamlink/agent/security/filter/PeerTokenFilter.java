@@ -35,58 +35,41 @@ public class PeerTokenFilter extends OncePerRequestFilter {
     private final AgentService agentService;
 
     @Override
-    protected void doFilterInternal(HttpServletRequest request,
-                                    HttpServletResponse response,
-                                    FilterChain chain)
-            throws ServletException, IOException {
-
+    protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain chain) throws ServletException, IOException {
         if (!isPeerEndpoint(request.getRequestURI())) {
             chain.doFilter(request, response);
-            return;
+        } else {
+            String publicToken = request.getHeader(HEADER_PUBLIC_TOKEN);
+            String publicIdHeader = request.getHeader(HEADER_PUBLIC_ID);
+            if (publicToken != null && publicIdHeader != null) {
+                UUID claimedPublicId;
+                try {
+                    claimedPublicId = UUID.fromString(publicIdHeader);
+                } catch (IllegalArgumentException var9) {
+                    log.warn("Invalid publicId header format: {}", publicIdHeader);
+                    response.sendError(401, "Invalid publicId format");
+                    return;
+                }
+
+                String nexusPublicKey = agentService.getNexusPublicKey();
+                if (nexusPublicKey == null) {
+                    log.warn("Nexus public key not available, rejecting peer request");
+                    response.sendError(503, "Not yet approved by nexus");
+                } else {
+                    boolean valid = peerTokenVerifier.verify(publicToken, claimedPublicId, nexusPublicKey);
+                    if (!valid) {
+                        log.warn("Peer token verification failed for publicId={} on {}", claimedPublicId, request.getRequestURI());
+                        response.sendError(401, "Invalid peer token");
+                    } else {
+                        SecurityContextHolder.getContext().setAuthentication(new UsernamePasswordAuthenticationToken(claimedPublicId.toString(), (Object)null, List.of(new SimpleGrantedAuthority("ROLE_PEER"))));
+                        chain.doFilter(request, response);
+                    }
+                }
+            } else {
+                log.warn("Peer request missing token headers: {}", request.getRequestURI());
+                response.sendError(401, "Missing peer token headers");
+            }
         }
-
-        String publicToken    = request.getHeader(HEADER_PUBLIC_TOKEN);
-        String publicIdHeader = request.getHeader(HEADER_PUBLIC_ID);
-
-        if (publicToken == null || publicIdHeader == null) {
-            log.warn("Peer request missing token headers: {}", request.getRequestURI());
-            response.sendError(HttpServletResponse.SC_UNAUTHORIZED, "Missing peer token headers");
-            return;
-        }
-
-        UUID claimedPublicId;
-        try {
-            claimedPublicId = UUID.fromString(publicIdHeader);
-        } catch (IllegalArgumentException e) {
-            log.warn("Invalid publicId header format: {}", publicIdHeader);
-            response.sendError(HttpServletResponse.SC_UNAUTHORIZED, "Invalid publicId format");
-            return;
-        }
-
-        String nexusPublicKey = agentService.getNexusPublicKey();
-        if (nexusPublicKey == null) {
-            log.warn("Nexus public key not available, rejecting peer request");
-            response.sendError(HttpServletResponse.SC_SERVICE_UNAVAILABLE, "Not yet approved by nexus");
-            return;
-        }
-
-        boolean valid = peerTokenVerifier.verify(publicToken, claimedPublicId, nexusPublicKey);
-        if (!valid) {
-            log.warn("Peer token verification failed for publicId={} on {}",
-                    claimedPublicId, request.getRequestURI());
-            response.sendError(HttpServletResponse.SC_UNAUTHORIZED, "Invalid peer token");
-            return;
-        }
-
-        SecurityContextHolder.getContext().setAuthentication(
-                new UsernamePasswordAuthenticationToken(
-                        claimedPublicId.toString(),
-                        null,
-                        List.of(new SimpleGrantedAuthority("ROLE_PEER"))
-                )
-        );
-
-        chain.doFilter(request, response);
     }
 
     /**

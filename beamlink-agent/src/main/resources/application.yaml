@@ -25,12 +25,6 @@ spring:
       hibernate:
         format_sql: false
     open-in-view: false
-  servlet:
-    multipart:
-      enabled: ${MULTIPART_ENABLED:false}
-      max-file-size: ${MULTIPART_MAX_FILE_SIZE:-1}
-      max-request-size: ${MULTIPART_MAX_REQUEST_SIZE:-1}
-      file-size-threshold: ${MULTIPART_FILE_SIZE_THRESHOLD:0}
   web:
     resources:
       static-locations: file:./static/,classpath:/static/

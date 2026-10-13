@@ -1,13 +1,12 @@
 package com.atamanahmet.beamlink.agent.service;
 
-import com.atamanahmet.beamlink.agent.dto.WebSocketMessageDTO;
 import com.atamanahmet.beamlink.agent.event.WsConnectionEvent;
 import com.atamanahmet.beamlink.agent.event.WsMessageEvent;
+import com.atamanahmet.beamlink.agent.websocket.WsEnvelope;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.http.HttpHeaders;
 import org.springframework.stereotype.Service;
@@ -21,31 +20,25 @@ import java.time.Duration;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 
+@Slf4j
 @Service
 @RequiredArgsConstructor
 public class NexusWebSocketService {
-
-    private final Logger log = LoggerFactory.getLogger(NexusWebSocketService.class);
 
     private final AgentService agentService;
     private final ObjectMapper objectMapper;
     private final ApplicationEventPublisher eventPublisher;
 
     private final AtomicBoolean connected = new AtomicBoolean(false);
-
     private final AtomicBoolean reconnectScheduled = new AtomicBoolean(false);
     private final AtomicReference<WebSocketSession> sessionRef = new AtomicReference<>();
+    private final ReactorNettyWebSocketClient client = new ReactorNettyWebSocketClient();
 
     private static final Duration RECONNECT_DELAY = Duration.ofSeconds(10);
     private static final String WS_PATH = "/ws/agents";
 
-    private final ReactorNettyWebSocketClient client = new ReactorNettyWebSocketClient();
-
     private volatile String nexusBaseUrl;
 
-    /**
-     * Connects to Nexus WS. Skips if already connected or token is missing.
-     */
     public void connect(String nexusUrl) {
         if (connected.get()) {
             log.debug("Already connected, skipping.");
@@ -54,16 +47,17 @@ public class NexusWebSocketService {
 
         String token = agentService.getAuthToken();
         if (token == null || token.isBlank()) {
-            log.warn("Cannot connect WS — no auth token yet.");
+            log.warn("Cannot connect WS, no auth token yet.");
             return;
         }
 
-        this.nexusBaseUrl = nexusUrl;
+        nexusBaseUrl = nexusUrl;
 
-        URI uri = URI.create(nexusUrl
-                .replaceFirst("^http://", "ws://")
-                .replaceFirst("^https://", "wss://")
-                + WS_PATH);
+        /* http → ws, https → wss */
+        URI uri = URI.create(
+                nexusUrl.replaceFirst("^http://", "ws://")
+                        .replaceFirst("^https://", "wss://") + WS_PATH
+        );
 
         HttpHeaders headers = new HttpHeaders();
         headers.set("X-Auth-Token", token);
@@ -80,14 +74,15 @@ public class NexusWebSocketService {
     }
 
     /**
-     * Handles active WS session, sets state, listen for messages, reconnects on termination.
+     * Called when WS session is established.
+     * Listens for incoming messages until session closes.
      */
     private Mono<Void> handleSession(WebSocketSession session) {
         sessionRef.set(session);
         connected.set(true);
         reconnectScheduled.set(false);
-        log.info("Connected to Nexus WS at {}", session.getHandshakeInfo().getUri());
 
+        log.info("Connected to Nexus WS at {}", session.getHandshakeInfo().getUri());
         eventPublisher.publishEvent(new WsConnectionEvent(this, WsConnectionEvent.Type.CONNECTED));
 
         return session.receive()
@@ -97,24 +92,20 @@ public class NexusWebSocketService {
                     connected.set(false);
                     sessionRef.set(null);
                     log.warn("WS session terminated. Scheduling reconnect...");
-                    eventPublisher.publishEvent(
-                            new WsConnectionEvent(this, WsConnectionEvent.Type.DISCONNECTED));
+                    eventPublisher.publishEvent(new WsConnectionEvent(this, WsConnectionEvent.Type.DISCONNECTED));
                     scheduleReconnect();
                 })
                 .then();
     }
 
-    /**
-     * Parses incoming WS message and publishes it as an application event.
-     */
     private Mono<Void> handleMessage(String raw) {
         try {
-            WebSocketMessageDTO<JsonNode> dto = objectMapper.readValue(
+            WsEnvelope<JsonNode> envelope = objectMapper.readValue(
                     raw,
-                    objectMapper.getTypeFactory().constructParametricType(WebSocketMessageDTO.class, JsonNode.class)
+                    objectMapper.getTypeFactory().constructParametricType(WsEnvelope.class, JsonNode.class)
             );
-            if (dto.getType() != null) {
-                eventPublisher.publishEvent(new WsMessageEvent(this, dto));
+            if (envelope.getType() != null) {
+                eventPublisher.publishEvent(new WsMessageEvent(this, envelope));
             }
         } catch (Exception e) {
             log.error("Failed to parse WS message: {}", e.getMessage());
@@ -123,7 +114,7 @@ public class NexusWebSocketService {
     }
 
     /**
-     * Schedules a single reconnect attempt after delay. Duplicate calls are ignored.
+     * Prevents duplicate reconnect attempts with AtomicBoolean guard.
      */
     private void scheduleReconnect() {
         if (!reconnectScheduled.compareAndSet(false, true)) {
@@ -139,31 +130,28 @@ public class NexusWebSocketService {
                 })
                 .onErrorComplete()
                 .subscribe(l -> {
-                    reconnectScheduled.set(false); // clear BEFORE connect() so it can proceed
+                    reconnectScheduled.set(false);
                     connect(nexusBaseUrl);
                 });
     }
 
-    /**
-     * Sends a message over the active WS session. Logs warning if session is not open.
-     */
     public void send(Object dto) {
         WebSocketSession session = sessionRef.get();
-        if (session != null && session.isOpen()) {
-            try {
-                String json = objectMapper.writeValueAsString(dto);
-                session.send(Mono.just(session.textMessage(json)))
-                        .doOnError(e -> {
-                            log.error("WS send failed: {}", e.getMessage());
-                            eventPublisher.publishEvent(
-                                    new WsConnectionEvent(this, WsConnectionEvent.Type.DISCONNECTED));
-                        })
-                        .subscribe();
-            } catch (Exception e) {
-                log.error("Failed to serialize WS message: {}", e.getMessage());
-            }
-        } else {
-            log.warn("Cannot send — WS session not open.");
+        if (session == null || !session.isOpen()) {
+            log.warn("Cannot send, WS session is not open.");
+            return;
+        }
+
+        try {
+            String json = objectMapper.writeValueAsString(dto);
+            session.send(Mono.just(session.textMessage(json)))
+                    .doOnError(ex -> {
+                        log.error("WS send failed: {}", ex.getMessage());
+                        eventPublisher.publishEvent(new WsConnectionEvent(this, WsConnectionEvent.Type.DISCONNECTED));
+                    })
+                    .subscribe();
+        } catch (Exception e) {
+            log.error("Failed to serialize WS message: {}", e.getMessage());
         }
     }
 

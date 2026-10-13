@@ -19,7 +19,10 @@ public class GlobalExceptionHandler {
 
     private final Logger log = LoggerFactory.getLogger(GlobalExceptionHandler.class);
 
-
+    @ExceptionHandler({SystemOperationException.class})
+    public ResponseEntity<HttpStatus> handleSystemOperationException(SystemOperationException ex) {
+        return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build();
+    }
 
     @ExceptionHandler(InsufficientDiskSpaceException.class)
     public ResponseEntity<Map<String, Object>> handleInsufficientDiskSpaceException(InsufficientDiskSpaceException e) {

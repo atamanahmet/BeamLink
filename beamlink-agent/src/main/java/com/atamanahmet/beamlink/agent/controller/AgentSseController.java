@@ -15,10 +15,10 @@ import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 import java.util.Map;
 
-@RestController
-@RequestMapping("/api/agent")
-@RequiredArgsConstructor
 @Slf4j
+@RestController
+@RequiredArgsConstructor
+@RequestMapping("/api/agent")
 public class AgentSseController {
 
     private final SseEmitters sseEmitters;

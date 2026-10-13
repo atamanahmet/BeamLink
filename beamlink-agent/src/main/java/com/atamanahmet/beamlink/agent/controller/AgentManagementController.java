@@ -4,6 +4,7 @@ import com.atamanahmet.beamlink.agent.dto.AgentRenameRequest;
 import com.atamanahmet.beamlink.agent.dto.AgentRenameResponse;
 import com.atamanahmet.beamlink.agent.service.AgentService;
 import lombok.RequiredArgsConstructor;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.reactive.function.client.WebClient;
@@ -17,30 +18,24 @@ import java.util.UUID;
 public class AgentManagementController {
 
     private final AgentService agentService;
-    private final WebClient nexusWebClient;
 
     @PostMapping("/{id}/rename")
-    public ResponseEntity<Void> requestRename(
+    public ResponseEntity<HttpStatus> requestRename(
             @PathVariable UUID id,
             @RequestBody AgentRenameRequest request) {
-
-        nexusWebClient.post()
-                .uri("/api/agents/" + id + "/rename")
-                .header("X-Auth-Token", agentService.getAuthToken())
-                .bodyValue(request)
-                .retrieve()
-                .toBodilessEntity()
-                .subscribeOn(Schedulers.boundedElastic())
-                .block();
-
-        return ResponseEntity.ok().build();
+        agentService.requestRename(id, request.getName());
+        return ResponseEntity
+                .ok()
+                .build();
     }
 
     @PostMapping("/rename")
-    public ResponseEntity<Void> receiveRename(@RequestBody AgentRenameResponse payload) {
+    public ResponseEntity<HttpStatus> receiveRename(@RequestBody AgentRenameResponse payload) {
         if (payload.getAgentName() != null && !payload.getAgentName().isBlank()) {
             agentService.updateAgentName(payload.getAgentName());
         }
-        return ResponseEntity.ok().build();
+        return ResponseEntity
+                .ok()
+                .build();
     }
 }

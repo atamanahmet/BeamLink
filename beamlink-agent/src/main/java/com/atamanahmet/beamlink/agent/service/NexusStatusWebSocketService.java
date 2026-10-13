@@ -1,39 +1,37 @@
 package com.atamanahmet.beamlink.agent.service;
 
-import com.atamanahmet.beamlink.agent.domain.TransferLog;
-import com.atamanahmet.beamlink.agent.domain.Peer;
-import com.atamanahmet.beamlink.agent.dto.AgentStatusDTO;
 import com.atamanahmet.beamlink.agent.dto.ApprovalPushRequest;
-import com.atamanahmet.beamlink.agent.dto.WebSocketMessageDTO;
+import com.atamanahmet.beamlink.agent.dto.HeartbeatPayload;
+import com.atamanahmet.beamlink.agent.dto.PeerDTO;
+import com.atamanahmet.beamlink.agent.dto.StatusUpdatePayload;
+import com.atamanahmet.beamlink.agent.dto.TransferLogDTO;
 import com.atamanahmet.beamlink.agent.event.WsConnectionEvent;
 import com.atamanahmet.beamlink.agent.event.WsMessageEvent;
+import com.atamanahmet.beamlink.agent.websocket.WsEnvelope;
+import com.atamanahmet.beamlink.agent.websocket.enums.WsMessageType;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.event.EventListener;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 
 import java.util.List;
+import java.util.UUID;
 
+@Slf4j
 @Service
 @RequiredArgsConstructor
 public class NexusStatusWebSocketService {
 
-    private final Logger log = LoggerFactory.getLogger(NexusStatusWebSocketService.class);
     private final ObjectMapper objectMapper;
-
     private final AgentService agentService;
-    private final LogService logService;
+    private final TransferLogService transferLogService;
     private final PeerCacheService peerCacheService;
     private final NexusConnectionStateService connectionState;
     private final NexusWebSocketService nexusWebSocketService;
 
-    /**
-     * Listeners for ws (to avoid circular dependency)
-     * */
     @EventListener
     public void onWsConnectionEvent(WsConnectionEvent event) {
         if (event.getType() == WsConnectionEvent.Type.CONNECTED) {
@@ -48,87 +46,123 @@ public class NexusStatusWebSocketService {
         handleMessage(event.getMessage());
     }
 
-    /**
-     * Sync with nexus
-     * */
-    @Scheduled(fixedRate = 30_000)
-    public void sendStatus() {
+    @Scheduled(fixedRate = 15_000)
+    public void sendHeartbeat() {
         if (!agentService.isApproved() || !nexusWebSocketService.isConnected()) return;
 
-        AgentStatusDTO statusDTO = agentService.getAgentStatusDTO();
-        WebSocketMessageDTO<AgentStatusDTO> msg = WebSocketMessageDTO.<AgentStatusDTO>builder()
-                .type("status_update")
-                .payload(statusDTO)
+        WsEnvelope<HeartbeatPayload> envelope = WsEnvelope.of(
+                WsMessageType.HEARTBEAT,
+                new HeartbeatPayload(peerCacheService.getCurrentPeerListVersion())
+        );
+        nexusWebSocketService.send(envelope);
+        log.debug("Heartbeat sent, peerVersion={}", peerCacheService.getCurrentPeerListVersion());
+    }
+
+    @Scheduled(fixedRate = 30_000)
+    public void sendStatusUpdate() {
+        if (!agentService.isApproved() || !nexusWebSocketService.isConnected()) return;
+
+        StatusUpdatePayload payload = StatusUpdatePayload.builder()
+                .ipAddress(agentService.getAgent().getIpAddress())
+                .port(agentService.getAgent().getPort())
+                .peerVersion(peerCacheService.getCurrentPeerListVersion())
                 .build();
 
-        nexusWebSocketService.send(msg);
-        log.debug("Status sent over WS: {}", statusDTO);
+        nexusWebSocketService.send(WsEnvelope.of(WsMessageType.STATUS_UPDATE, payload));
+        log.debug("Status update sent: {}:{}", payload.ipAddress(), payload.port());
     }
 
     @Scheduled(fixedRate = 60_000)
     public void syncLogs() {
         if (!agentService.isApproved() || !nexusWebSocketService.isConnected()) return;
 
-        List<TransferLog> unsyncedLogs = logService.getUnsyncedLogs();
+        List<TransferLogDTO> unsyncedLogs = transferLogService.getUnsyncedLogs();
         if (unsyncedLogs.isEmpty()) return;
 
-        WebSocketMessageDTO<List<TransferLog>> msg = WebSocketMessageDTO.<List<TransferLog>>builder()
-                .type("log_sync")
-                .payload(unsyncedLogs)
-                .build();
+        nexusWebSocketService.send(WsEnvelope.of(WsMessageType.LOG_SYNC, unsyncedLogs));
 
-        nexusWebSocketService.send(msg);
+        List<UUID> ids = unsyncedLogs.stream().map(TransferLogDTO::getId).toList();
+        transferLogService.markAsSynced(ids);
         log.debug("Sent {} unsynced logs over WS", unsyncedLogs.size());
     }
 
     /**
-     * ws message
-     * */
-    private void handleMessage(WebSocketMessageDTO<JsonNode> message) {
-        if (message == null || message.getType() == null) return;
+     * Routes incoming WS message to correct handler by type.
+     */
+    private void handleMessage(WsEnvelope<JsonNode> envelope) {
+        if (envelope == null || envelope.getType() == null) return;
 
-        switch (message.getType()) {
-            case "approval_push"  -> handleApprovalPush(message);
-            case "peer_update"    -> handlePeerUpdate(message);
-            case "rename_request" -> handleRename(message);
-            default -> log.warn("Unknown WS message type: {}", message.getType());
+        WsMessageType type;
+        try {
+            type = envelope.getType();
+        } catch (IllegalArgumentException e) {
+            log.warn("Unknown WS message type: {}", envelope.getType());
+            return;
+        }
+
+        switch (type) {
+            case APPROVAL_PUSH    -> handleApprovalPush(envelope);
+            case PEER_LIST_UPDATE -> handlePeerListUpdate(envelope);
+            case AGENT_JOINED     -> handleAgentJoined(envelope);
+            case AGENT_OFFLINE    -> handleAgentOffline(envelope);
+            case RENAME_PUSH      -> handleRenamePush(envelope);
+            default               -> log.warn("Unhandled WS message type: {}", type);
         }
     }
 
-    private void handleApprovalPush(WebSocketMessageDTO<JsonNode> message) {
+    private void handleApprovalPush(WsEnvelope<JsonNode> envelope) {
         try {
-            ApprovalPushRequest request = objectMapper.treeToValue(message.getPayload(), ApprovalPushRequest.class);
+            ApprovalPushRequest request = objectMapper.treeToValue(envelope.getPayload(), ApprovalPushRequest.class);
             agentService.applyNexusIdentity(request);
-            log.info("Agent approved via WS. Name={}, Id={}",
-                    agentService.getAgentName(), agentService.getAgentId());
+            log.info("Approval applied via WS. Name={}, Id={}", agentService.getAgentName(), agentService.getAgentId());
         } catch (Exception e) {
             log.error("Failed to apply approval push: {}", e.getMessage(), e);
         }
     }
 
-    private void handlePeerUpdate(WebSocketMessageDTO<JsonNode> message) {
+    private void handlePeerListUpdate(WsEnvelope<JsonNode> envelope) {
         try {
-            List<Peer> peers = objectMapper.convertValue(
-                    message.getPayload(),
-                    objectMapper.getTypeFactory().constructCollectionType(List.class, Peer.class)
+            List<PeerDTO> peers = objectMapper.convertValue(
+                    envelope.getPayload(),
+                    objectMapper.getTypeFactory().constructCollectionType(List.class, PeerDTO.class)
             );
-            long version = message.getVersion() != null ? message.getVersion() : 0L;
+            long version = envelope.getVersion() != null ? envelope.getVersion() : 0L;
             peerCacheService.updatePeers(peers, version);
-            log.debug("Peer update applied via WS, {} peers (version: {})", peers.size(), version);
+            log.debug("Peer list update applied: {} peers (version: {})", peers.size(), version);
         } catch (Exception e) {
-            log.error("Failed to handle peer update: {}", e.getMessage(), e);
+            log.error("Failed to handle peer list update: {}", e.getMessage(), e);
         }
     }
 
-    private void handleRename(WebSocketMessageDTO<JsonNode> message) {
+    private void handleAgentJoined(WsEnvelope<JsonNode> envelope) {
         try {
-            String newName = message.getPayload().get("agentName").asText();
+            PeerDTO peer = objectMapper.treeToValue(envelope.getPayload(), PeerDTO.class);
+            peerCacheService.addOrUpdatePeer(peer);
+            log.info("Agent joined: {} ({})", peer.getAgentName(), peer.getAgentId());
+        } catch (Exception e) {
+            log.error("Failed to handle agent joined: {}", e.getMessage(), e);
+        }
+    }
+
+    private void handleAgentOffline(WsEnvelope<JsonNode> envelope) {
+        try {
+            UUID agentId = UUID.fromString(envelope.getPayload().get("agentId").asText());
+            peerCacheService.markOffline(agentId);
+            log.info("Agent offline: {}", agentId);
+        } catch (Exception e) {
+            log.error("Failed to handle agent offline: {}", e.getMessage(), e);
+        }
+    }
+
+    private void handleRenamePush(WsEnvelope<JsonNode> envelope) {
+        try {
+            String newName = envelope.getPayload().get("agentName").asText();
             if (newName != null && !newName.isBlank()) {
                 agentService.updateAgentName(newName);
                 log.info("Agent renamed via WS: {}", newName);
             }
         } catch (Exception e) {
-            log.error("Failed to handle rename request: {}", e.getMessage(), e);
+            log.error("Failed to handle rename push: {}", e.getMessage(), e);
         }
     }
 }

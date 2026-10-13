@@ -1,6 +1,6 @@
 package com.atamanahmet.beamlink.agent;
 
-import com.atamanahmet.beamlink.agent.service.RegistrationService;
+import com.atamanahmet.beamlink.agent.service.NetworkRegistrationService;
 import lombok.RequiredArgsConstructor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -32,7 +32,7 @@ public class BeamlinkAgentApplication implements CommandLineRunner {
     private String ipAddress;
 
     private final Logger log = LoggerFactory.getLogger(BeamlinkAgentApplication.class);
-    private final RegistrationService registrationService;
+    private final NetworkRegistrationService networkRegistrationService;
 
 
     public static void main(String[] args) {
@@ -48,7 +48,7 @@ public class BeamlinkAgentApplication implements CommandLineRunner {
         System.out.println("========================================");
         System.out.println("Update received");
 
-        registrationService.resolveIdentityFromNexus();
+        networkRegistrationService.resolveIdentityFromNexus();
 
     }
 }

@@ -5,6 +5,7 @@ import jakarta.persistence.*;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
+import org.hibernate.annotations.JdbcTypeCode;
 
 import java.util.UUID;
 
@@ -20,11 +21,26 @@ public class Agent {
     @Column(nullable = false, updatable = false)
     private Long id = 1L;
 
-    @Column(columnDefinition = "VARCHAR(36)")
+    @Column
+    @JdbcTypeCode(12)
     private UUID agentId;
+
+    @Column
+    @JdbcTypeCode(12)
+    private UUID publicId;
 
     @Column(nullable = false)
     private String agentName;
+
+    @Column(nullable = false)
+
+    private String username;
+    @Column(nullable = false)
+
+    private String encodedPassword;
+
+    @Column(nullable = false)
+    private boolean credentialsConfigured = false;
 
     @Column(nullable = false)
     private String ipAddress;
@@ -38,6 +54,9 @@ public class Agent {
     @Column
     private String publicToken;
 
+    @Column(columnDefinition = "TEXT")
+    private String nexusPublicKey;
+
     @Enumerated(EnumType.STRING)
     @Column(nullable = false)
     private AgentState state = AgentState.UNREGISTERED;
@@ -46,19 +65,4 @@ public class Agent {
         return state == AgentState.APPROVED;
     }
 
-    public String getAddress() {
-        return ipAddress + ":" + port;
-    }
-
-    public Peer toPeer() {
-        return new Peer(
-                agentId,
-                agentName,
-                ipAddress,
-                port,
-                System.currentTimeMillis(),
-                true,
-                publicToken
-        );
-    }
 }

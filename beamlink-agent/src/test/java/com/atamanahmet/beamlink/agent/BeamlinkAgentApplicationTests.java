@@ -1,6 +1,6 @@
 package com.atamanahmet.beamlink.agent;
 
-import com.atamanahmet.beamlink.agent.service.RegistrationService;
+import com.atamanahmet.beamlink.agent.service.NetworkRegistrationService;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -14,7 +14,7 @@ import java.nio.file.Path;
 class BeamlinkAgentApplicationTests {
 
     @MockBean
-    private RegistrationService registrationService;
+    private NetworkRegistrationService networkRegistrationService;
 
     @BeforeAll
     static void setup() throws IOException {
