@@ -1,5 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { FolderPlus, X, Check, Trash2 } from "lucide-react";
+import type { Platform } from "@beamlink/core";
+import { usePlatform } from "@beamlink/platform";
 
 export interface FsEntry {
   name: string;
@@ -28,9 +30,12 @@ export interface FileBrowserModalProps {
   mode?: "multi" | "folder";
 }
 
-function getSidebarItems(): SidebarItem[] {
-  const home = window.electronAPI.getHomedir();
-  const sep = window.electronAPI.getSep();
+/**
+ * Builds the sidebar shortcut list from the user home directory.
+ */
+function getSidebarItems(platform: Platform): SidebarItem[] {
+  const home = platform.env.homedir;
+  const sep = platform.env.sep;
   const join = (...parts: string[]) => parts.join(sep).replace(/[/\\]+/g, sep);
 
   return [
@@ -112,7 +117,7 @@ function getFileIcon(name: string): string {
 //   for (let i = 0; i <= 99; i++) {
 //     const name = candidate(i);
 //     const full = [parentPath, name].join(sep).replace(/[/\\]+/g, sep);
-//     if (!window.electronAPI.exists(full)) return name;
+//     if (!exists(full)) return name;
 //   }
 //   return `${base} (${Date.now()})`;
 // }
@@ -393,6 +398,7 @@ export function FileBrowserModal({
   title = "Select Files or Folders",
   mode = "multi",
 }: FileBrowserModalProps) {
+  const platform = usePlatform();
   const [roots, setRoots] = useState<FsEntry[]>([]);
   const [sidebarItems, setSidebarItems] = useState<SidebarItem[]>([]);
   const [currentPath, setCurrentPath] = useState<string>("");
@@ -406,16 +412,16 @@ export function FileBrowserModal({
   /** New folder state */
   const [creatingFolder, setCreatingFolder] = useState(false);
   const [newFolderError, setNewFolderError] = useState<string | null>(null);
-  const sep = window.electronAPI.getSep();
+  const sep = platform.env.sep;
 
   const loadDirectory = useCallback(
-    (dirPath: string, pushHistory = true) => {
+    async (dirPath: string, pushHistory = true) => {
       setLoading(true);
       setError(null);
       setCreatingFolder(false);
       setNewFolderError(null);
       try {
-        const result: FsEntry[] = window.electronAPI.readDir(dirPath);
+        const result: FsEntry[] = await platform.readDir(dirPath);
         const sorted = [...result].sort((a, b) => {
           if (a.isDirectory !== b.isDirectory) return a.isDirectory ? -1 : 1;
           return a.name.localeCompare(b.name);
@@ -429,13 +435,15 @@ export function FileBrowserModal({
         setLoading(false);
       }
     },
-    [currentPath],
+    [currentPath, platform],
   );
 
   useEffect(() => {
     if (!isOpen) return;
-    setRoots(window.electronAPI.getRoots());
-    setSidebarItems(getSidebarItems());
+    void (async () => {
+      setRoots(await platform.getRoots());
+      setSidebarItems(await getSidebarItems(platform));
+    })();
     setSelected(new Set());
     setHistory([]);
     setEntries([]);
@@ -444,7 +452,7 @@ export function FileBrowserModal({
     setCreatingFolder(false);
     setNewFolderError(null);
     setShowSelectedPanel(false);
-  }, [isOpen]);
+  }, [isOpen, platform]);
 
   const goBack = () => {
     if (history.length === 0) return;
@@ -504,10 +512,10 @@ export function FileBrowserModal({
     setNewFolderError(null);
   };
 
-  const commitNewFolder = (name: string) => {
+  const commitNewFolder = async (name: string) => {
     const fullPath = [currentPath, name].join(sep).replace(/[/\\]+/g, sep);
 
-    if (window.electronAPI.exists(fullPath)) {
+    if (await platform.exists(fullPath)) {
       setNewFolderError(`"${name}" already exists.`);
       return;
     }
@@ -519,10 +527,10 @@ export function FileBrowserModal({
     }
 
     try {
-      window.electronAPI.mkdir(fullPath);
+      await platform.mkdir(fullPath);
       setCreatingFolder(false);
       setNewFolderError(null);
-      loadDirectory(currentPath, false); // refresh without pushing history
+      void loadDirectory(currentPath, false); // refresh without pushing history
     } catch (e: any) {
       setNewFolderError(e?.message ?? "Could not create folder.");
     }

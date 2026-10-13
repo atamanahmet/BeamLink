@@ -7,9 +7,19 @@ import {
   Menu,
   nativeImage,
 } from "electron";
+import {
+  isHexColor,
+  readSavedWindowTheme,
+  saveWindowTheme,
+} from "@beamlink/electron-main";
 import { spawn, ChildProcess } from "child_process";
 import path from "path";
 import fs from "fs";
+
+const DEFAULT_WINDOW_THEME = {
+  background: "#121212",
+  foreground: "#f5f5f5",
+};
 
 let mainWindow: BrowserWindow | null = null;
 let backendProcess: ChildProcess | null = null;
@@ -191,16 +201,25 @@ function createTray() {
   });
 }
 
+/**
+ * Returns the path of the saved window theme file.
+ */
+function windowThemePath(): string {
+  return path.join(app.getPath("userData"), "window-theme.json");
+}
+
 function createWindow() {
+  const theme = readSavedWindowTheme(windowThemePath(), DEFAULT_WINDOW_THEME);
   mainWindow = new BrowserWindow({
     show: false,
     width: 1280,
     height: 800,
     icon: getIconPath(),
+    backgroundColor: theme.background,
     titleBarStyle: "hidden",
     titleBarOverlay: {
-      color: "#1a0f0a",
-      symbolColor: "#f97316",
+      color: theme.background,
+      symbolColor: theme.foreground,
       height: 40,
     },
     webPreferences: {
@@ -228,17 +247,17 @@ function createWindow() {
 app.whenReady().then(async () => {
   resourcesDir =
     process.env.NODE_ENV === "development"
-      ? path.resolve(__dirname, "../../../resources/agent")
+      ? path.resolve(__dirname, "../../../../resources/agent")
       : process.resourcesPath;
 
   jreDir =
     process.env.NODE_ENV === "development"
-      ? path.resolve(__dirname, "../../../resources/jre")
+      ? path.resolve(__dirname, "../../../../resources/jre")
       : path.join(process.resourcesPath, "jre");
 
   runtimeDir =
     process.env.NODE_ENV === "development"
-      ? path.resolve(__dirname, "../../../resources/agent")
+      ? path.resolve(__dirname, "../../../../resources/agent")
       : path.join(app.getPath("appData"), "BeamLink", "Agent");
 
   const runtimeSubdirs = ["data/database", "data/uploads", "data/temp", "logs"];
@@ -334,3 +353,41 @@ ipcMain.handle("select-files-and-directories", async () => {
   });
   return result.filePaths;
 });
+
+ipcMain.handle(
+  "window:set-theme",
+  async (
+    event,
+    colors: { background?: unknown; foreground?: unknown },
+  ) => {
+    if (
+      typeof colors?.background !== "string" ||
+      typeof colors?.foreground !== "string" ||
+      !isHexColor(colors.background) ||
+      !isHexColor(colors.foreground)
+    ) {
+      return;
+    }
+    const win = BrowserWindow.fromWebContents(event.sender);
+    if (!win) {
+      return;
+    }
+    const next = {
+      background: colors.background,
+      foreground: colors.foreground,
+    };
+    win.setBackgroundColor(next.background);
+    if (typeof win.setTitleBarOverlay === "function") {
+      try {
+        win.setTitleBarOverlay({
+          color: next.background,
+          symbolColor: next.foreground,
+          height: 40,
+        });
+      } catch (error) {
+        console.error("[theme] setTitleBarOverlay failed:", error);
+      }
+    }
+    saveWindowTheme(windowThemePath(), next);
+  },
+);

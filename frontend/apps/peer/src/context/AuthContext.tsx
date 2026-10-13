@@ -1,5 +1,6 @@
 import { createContext, useContext, useState, useEffect, useRef } from "react";
 import axios, { type AxiosInstance } from "axios";
+import { usePlatform } from "@beamlink/platform";
 
 interface AgentIdentity {
   agentId: string;
@@ -26,6 +27,7 @@ interface AuthContextType {
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
+  const platform = usePlatform();
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [isBackendReady, setIsBackendReady] = useState(false);
   const [backendError, setBackendError] = useState<string | null>(null);
@@ -57,18 +59,18 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   };
 
   useEffect(() => {
-    window.electronAPI?.getBackendStatus().then((data) => {
+    void platform.getBackendStatus().then((data) => {
       if (data.status === "ready") onBackendReady(data.backendUrl);
       else if (data.status === "error")
         setBackendError(data.message ?? "Backend failed to start.");
     });
 
-    window.electronAPI?.onBackendStatus((data) => {
+    void platform.onBackendStatus((data) => {
       if (data.status === "ready") onBackendReady(data.backendUrl);
       else if (data.status === "error")
         setBackendError(data.message ?? "Backend failed to start.");
     });
-  }, []);
+  }, [platform]);
 
   const sseHandlersRef = useRef<Map<string, Set<(data: any) => void>>>(
     new Map(),

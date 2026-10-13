@@ -130,4 +130,7 @@ contextBridge.exposeInMainWorld("electronAPI", {
   },
 
   getBackendStatus: () => ipcRenderer.invoke("get-backend-status"),
+
+  setWindowTheme: (colors: { background: string; foreground: string }) =>
+    ipcRenderer.invoke("window:set-theme", colors),
 });
