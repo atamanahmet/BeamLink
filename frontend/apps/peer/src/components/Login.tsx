@@ -1,98 +1,104 @@
 import { useState } from "react";
-import { Lock } from "lucide-react";
-import { useAuth } from "../context/AuthContext";
+import { useNavigate } from "react-router";
+import {
+  Alert,
+  Anchor,
+  Button,
+  PasswordInput,
+  Stack,
+  Text,
+  TextInput,
+} from "@mantine/core";
+import { AuthCard } from "@beamlink/ui";
+import axios from "axios";
+import { login } from "../api/authApi";
+
+/**
+ * Maps a login failure to the inline error message.
+ */
+function loginErrorMessage(err: unknown): string {
+  if (!axios.isAxiosError(err) || !err.response) {
+    return "Cannot reach the server";
+  }
+  if (err.response.status === 401 || err.response.status === 403) {
+    return "Wrong username or password";
+  }
+  return "Something went wrong, try again";
+}
 
 export const Login = () => {
-  const { login, setView } = useAuth();
+  const navigate = useNavigate();
 
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
 
+  /**
+   * Submits credentials and shows an inline error on failure.
+   */
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
     setLoading(true);
     try {
-      await login(username, password);
-    } catch {
-      setError("Invalid credentials");
+      await login(username.trim(), password);
+    } catch (err) {
+      setError(loginErrorMessage(err));
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center p-4 bg-linear-to-br from-[#1a0f0a] via-[#3b1f12] to-black">
-      <div className="bg-black/70 backdrop-blur-xl border border-orange-500/20 shadow-[0_0_40px_rgba(255,120,0,0.15)] rounded-2xl p-8 max-w-md w-full">
-        <div className="text-center mb-8">
-          <div className="inline-block p-4 bg-orange-500/10 rounded-full mb-4">
-            <Lock className="w-12 h-12 text-orange-400" />
-          </div>
-          <h1 className="text-4xl font-bold text-orange-400 tracking-wide mb-2">
-            BeamLink Agent
-          </h1>
-          <p className="text-orange-300/60 text-sm">
-            Network File Transfer Node
-          </p>
-        </div>
-
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <div>
-            <label className="block text-orange-300 text-sm mb-2">
-              Username
-            </label>
-            <input
-              type="text"
-              value={username}
-              onChange={(e) => setUsername(e.target.value)}
-              className="w-full bg-black/60 border border-orange-800 rounded-lg px-4 py-3 text-orange-100 placeholder-orange-700/50 focus:outline-none focus:border-orange-500 focus:ring-2 focus:ring-orange-500/20 transition-all"
-              placeholder="Enter username"
-              required
-            />
-          </div>
-
-          <div>
-            <label className="block text-orange-300 text-sm mb-2">
-              Password
-            </label>
-            <input
-              type="password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              className="w-full bg-black/60 border border-orange-800 rounded-lg px-4 py-3 text-orange-100 placeholder-orange-700/50 focus:outline-none focus:border-orange-500 focus:ring-2 focus:ring-orange-500/20 transition-all"
-              placeholder="Enter password"
-              required
-            />
-          </div>
-
-          {error && (
-            <div className="bg-red-900/50 border border-red-600 rounded-lg p-3">
-              <p className="text-red-200 text-sm">{error}</p>
-            </div>
-          )}
-
-          <button
-            type="submit"
-            disabled={loading}
-            className="w-full bg-linear-to-r from-orange-600 to-amber-500 text-black px-6 py-3 rounded-lg font-medium hover:from-orange-500 hover:to-yellow-400 transition-all shadow-lg shadow-orange-900/40 disabled:opacity-50"
+    <AuthCard
+      brand="BeamLink Agent"
+      title="Sign in"
+      subtitle="Network File Transfer Node"
+      footer={
+        <Text ta="center" size="sm" c="var(--bl-text-secondary)">
+          First time?{" "}
+          <Anchor
+            component="button"
+            type="button"
+            onClick={() => navigate("/register")}
           >
-            {loading ? "Signing in..." : "Access Agent"}
-          </button>
-
-          <p className="text-center text-orange-700 text-sm">
-            First time?{" "}
-            <button
-              type="button"
-              onClick={() => setView("register")}
-              className="text-orange-400 hover:text-orange-300 transition-colors"
-            >
-              Create an account
-            </button>
-          </p>
-        </form>
-      </div>
-    </div>
+            Create an account
+          </Anchor>
+        </Text>
+      }
+    >
+      <form onSubmit={handleSubmit}>
+        <Stack gap="md">
+          <TextInput
+            label="Username"
+            placeholder="Enter username"
+            value={username}
+            onChange={(e) => setUsername(e.currentTarget.value)}
+            autoFocus
+            autoComplete="username"
+            required
+            disabled={loading}
+          />
+          <PasswordInput
+            label="Password"
+            placeholder="Enter password"
+            value={password}
+            onChange={(e) => setPassword(e.currentTarget.value)}
+            autoComplete="current-password"
+            required
+            disabled={loading}
+          />
+          {error ? (
+            <Alert color="danger" variant="light">
+              {error}
+            </Alert>
+          ) : null}
+          <Button type="submit" fullWidth loading={loading}>
+            Access Agent
+          </Button>
+        </Stack>
+      </form>
+    </AuthCard>
   );
 };

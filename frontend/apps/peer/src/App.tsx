@@ -1,41 +1,59 @@
-import { useState } from "react";
-import { Dashboard } from "./components/Dashboard";
-import { Login } from "./components/Login";
-import { Register } from "./components/Register";
-import { AuthProvider, useAuth } from "./context/AuthContext";
-import { AgentProvider } from "./context/AgentContext";
-import { TransferProvider } from "./context/TransferContext";
-
+import { useEffect, useState } from "react";
+import { Outlet } from "react-router";
+import { Text } from "@mantine/core";
+import { QueryClientProvider } from "@tanstack/react-query";
+import { usePlatform } from "@beamlink/platform";
 import icon from "../assets/icon.png";
 import StartupScreen from "./components/StartupScreen";
+import { setApiBaseUrl } from "./api/client";
+import { getAgentStatus } from "./api/agentApi";
+import { usePeerSse } from "./hooks/usePeerSse";
+import { queryClient } from "./queryClient";
+import { useAuthStore } from "./store/authStore";
+import { useAgentStatusStore } from "./store/agentStatusStore";
 
-function AppContent() {
-  const { isAuthenticated, view } = useAuth();
+/**
+ * Loads agent status and keeps SSE alive while logged in.
+ */
+function PeerSessionEffects() {
+  const status = useAuthStore((s) => s.status);
+  const setAgentStatus = useAgentStatusStore((s) => s.setAgentStatus);
 
-  const renderView = () => {
-    if (isAuthenticated) return <Dashboard />;
-    if (view === "register") return <Register />;
-    return <Login />;
-  };
+  usePeerSse(setAgentStatus);
 
-  return (
-    <div className="bg-linear-to-br from-[#1a0f0a] via-[#3b1f12] to-black">
-      <div
-        style={{ WebkitAppRegion: "drag" } as React.CSSProperties}
-        className="h-10 w-full flex items-center px-4 gap-3"
-      >
-        <img
-          src={icon}
-          className="w-5 h-5"
-          style={{ WebkitAppRegion: "no-drag" } as React.CSSProperties}
-        />
-        <span className="text-orange-400 text-sm font-medium select-none">
-          BeamLink Agent
-        </span>
-      </div>
-      {renderView()}
-    </div>
-  );
+  useEffect(() => {
+    if (status !== "authenticated") {
+      setAgentStatus(null);
+      return;
+    }
+    void getAgentStatus()
+      .then(setAgentStatus)
+      .catch(() => setAgentStatus(null));
+  }, [status, setAgentStatus]);
+
+  return null;
+}
+
+/**
+ * Wires production backend URL once the platform reports ready.
+ */
+function BackendUrlBinder() {
+  const platform = usePlatform();
+
+  useEffect(() => {
+    void platform.getBackendStatus().then((data) => {
+      if (data.status === "ready" && data.backendUrl) {
+        setApiBaseUrl(data.backendUrl);
+      }
+    });
+    void platform.onBackendStatus((data) => {
+      if (data.status === "ready" && data.backendUrl) {
+        setApiBaseUrl(data.backendUrl);
+      }
+    });
+  }, [platform]);
+
+  return null;
 }
 
 function App() {
@@ -44,13 +62,52 @@ function App() {
   if (!ready) return <StartupScreen onReady={() => setReady(true)} />;
 
   return (
-    <AuthProvider>
-      <AgentProvider>
-        <TransferProvider>
-          <AppContent />
-        </TransferProvider>
-      </AgentProvider>
-    </AuthProvider>
+    <QueryClientProvider client={queryClient}>
+      <BackendUrlBinder />
+      <PeerSessionEffects />
+      <div
+        style={{
+          backgroundColor: "var(--bl-background)",
+          minHeight: "100vh",
+        }}
+      >
+        <div
+          style={
+            {
+              WebkitAppRegion: "drag",
+              height: 40,
+              width: "100%",
+              display: "flex",
+              alignItems: "center",
+              paddingLeft: 16,
+              paddingRight: 16,
+              gap: 12,
+            } as React.CSSProperties
+          }
+        >
+          <img
+            src={icon}
+            alt=""
+            style={
+              {
+                width: 20,
+                height: 20,
+                WebkitAppRegion: "no-drag",
+              } as React.CSSProperties
+            }
+          />
+          <Text
+            size="sm"
+            fw={500}
+            c="var(--bl-primary-text)"
+            style={{ userSelect: "none" }}
+          >
+            BeamLink Agent
+          </Text>
+        </div>
+        <Outlet />
+      </div>
+    </QueryClientProvider>
   );
 }
 

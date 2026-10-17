@@ -1,4 +1,6 @@
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef } from "react";
+import { Outlet, useLocation, useNavigate } from "react-router";
+import { Button } from "@mantine/core";
 import {
   LogOut,
   Upload,
@@ -6,129 +8,109 @@ import {
   FolderOpen,
   Settings,
 } from "lucide-react";
-import { FileUpload } from "./FileUpload";
-import WarpBackground from "./WarpBackground";
-import { useAuth } from "../context/AuthContext";
-import { TransferView } from "./TransferView";
-import { AgentInfo } from "./AgentInfo";
-import { SettingsView } from "./SettingsView";
+import { AppFrame, WarpBackground } from "@beamlink/ui";
+import {
+  useHasActiveTransfers,
+  useTransfersQuery,
+} from "@beamlink/features";
+import { logout } from "../api/authApi";
+import { transferApi } from "../api/transferApi";
+import { useAuthStore } from "../store/authStore";
 
 export const Dashboard = () => {
-  const [activeView, setActiveView] = useState<
-    "upload" | "info" | "transfers" | "settings"
-  >("upload");
+  const status = useAuthStore((s) => s.status);
+  useTransfersQuery(transferApi, { enabled: status === "authenticated" });
+  const hasActive = useHasActiveTransfers();
 
-  const [isUploading, setIsUploading] = useState(false);
-
+  const [warpActive, setWarpActive] = useState(false);
   const warpOffTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const handleUploadingChange = useCallback((active: boolean) => {
-    if (active) {
+  if (hasActive && !warpActive) {
+    setWarpActive(true);
+  }
+
+  useEffect(() => {
+    if (hasActive) {
       if (warpOffTimer.current) {
         clearTimeout(warpOffTimer.current);
         warpOffTimer.current = null;
       }
-      setIsUploading(true);
-    } else {
-      warpOffTimer.current = setTimeout(() => {
-        setIsUploading(false);
-        warpOffTimer.current = null;
-      }, 1200);
+      return;
     }
-  }, []);
-
-  useEffect(() => {
+    warpOffTimer.current = setTimeout(() => {
+      setWarpActive(false);
+      warpOffTimer.current = null;
+    }, 1200);
     return () => {
-      if (warpOffTimer.current) clearTimeout(warpOffTimer.current);
+      if (warpOffTimer.current) {
+        clearTimeout(warpOffTimer.current);
+        warpOffTimer.current = null;
+      }
     };
-  }, []);
+  }, [hasActive]);
 
-  const { logout } = useAuth();
+  const navigate = useNavigate();
+  const location = useLocation();
+  const activeKey = location.pathname.replace(/^\//, "") || "upload";
 
   return (
-    <div className="relative h-screen overflow-hidden bg-linear-to-br from-[#1a0f0a] via-[#3b1f12] to-black">
-      <WarpBackground active={isUploading} />
+    <div
+      style={{
+        position: "relative",
+        height: "calc(100vh - 40px)",
+        overflow: "hidden",
+      }}
+    >
+      <WarpBackground active={warpActive} />
 
-      <div className="relative z-10 flex flex-col h-screen">
-        {/* Nav*/}
-        <div className="shrink-0 flex justify-between items-center px-6 py-4 border-b border-orange-900/30">
-          <h1 className="text-4xl font-bold text-orange-400"> </h1>
-
-          <div className="flex gap-4">
-            <button
-              onClick={() => setActiveView("upload")}
-              className={`flex items-center gap-2 px-4 py-2 rounded-lg transition-all cursor-pointer ${
-                activeView === "upload"
-                  ? "bg-orange-600 text-white"
-                  : "bg-orange-900/30 border border-orange-700 text-orange-300 hover:bg-orange-900/50"
-              }`}
+      <div style={{ position: "relative", zIndex: 10, height: "100%" }}>
+        <AppFrame
+          brand="BeamLink Agent"
+          activeKey={activeKey}
+          onNavigate={(to) => navigate(to)}
+          navItems={[
+            {
+              key: "upload",
+              label: "Upload",
+              to: "/upload",
+              icon: <Upload size={16} />,
+            },
+            {
+              key: "info",
+              label: "Info",
+              to: "/info",
+              icon: <LayoutDashboard size={16} />,
+            },
+            {
+              key: "transfers",
+              label: "Transfers",
+              to: "/transfers",
+              icon: <FolderOpen size={16} />,
+            },
+            {
+              key: "settings",
+              label: "Settings",
+              to: "/settings",
+              icon: <Settings size={16} />,
+            },
+          ]}
+          footer={
+            <Button
+              variant="subtle"
+              color="brand"
+              fullWidth
+              leftSection={<LogOut size={16} />}
+              onClick={() => void logout()}
+              styles={{
+                root: { WebkitAppRegion: "no-drag" } as React.CSSProperties,
+              }}
             >
-              <Upload className="w-4 h-4" />
-              Upload
-            </button>
-
-            <button
-              onClick={() => setActiveView("info")}
-              className={`flex items-center gap-2 px-4 py-2 rounded-lg transition-all cursor-pointer ${
-                activeView === "info"
-                  ? "bg-orange-600 text-white"
-                  : "bg-orange-900/30 border border-orange-700 text-orange-300 hover:bg-orange-900/50"
-              }`}
-            >
-              <LayoutDashboard className="w-4 h-4" />
-              Info
-            </button>
-
-            <button
-              onClick={() => setActiveView("transfers")}
-              className={`flex items-center gap-2 px-4 py-2 rounded-lg transition-all cursor-pointer ${
-                activeView === "transfers"
-                  ? "bg-orange-600 text-white"
-                  : "bg-orange-900/30 border border-orange-700 text-orange-300 hover:bg-orange-900/50"
-              }`}
-            >
-              <FolderOpen className="w-4 h-4" />
-              Transfers
-            </button>
-
-            <button
-              onClick={() => setActiveView("settings")}
-              className={`flex items-center gap-2 px-4 py-2 rounded-lg transition-all cursor-pointer ${
-                activeView === "settings"
-                  ? "bg-orange-600 text-white"
-                  : "bg-orange-900/30 border border-orange-700 text-orange-300 hover:bg-orange-900/50"
-              }`}
-            >
-              <Settings className="w-4 h-4" />
-              Settings
-            </button>
-
-            <button
-              onClick={() => logout()}
-              className="flex items-center gap-2 px-4 py-2 bg-orange-900/30 hover:bg-orange-900/50
-                         border border-orange-700 rounded-lg text-orange-300 transition-all cursor-pointer"
-            >
-              <LogOut className="w-4 h-4" />
               Logout
-            </button>
-          </div>
-        </div>
-
-        {/* Scrollable content */}
-        <div className="flex-1 overflow-y-auto p-6">
-          <div className="max-w-7xl mx-auto">
-            {activeView === "upload" && (
-              <FileUpload
-                onTransferStarted={() => setActiveView("transfers")}
-              />
-            )}
-            {activeView === "info" && <AgentInfo />}
-            {activeView === "transfers" && (
-              <TransferView onUploadingChange={handleUploadingChange} />
-            )}
-            {activeView === "settings" && <SettingsView />}
-          </div>
-        </div>
+            </Button>
+          }
+        >
+          <Outlet />
+        </AppFrame>
       </div>
     </div>
   );

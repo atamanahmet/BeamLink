@@ -1,4 +1,5 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { Loader, Stack, Text, Title } from "@mantine/core";
 import { usePlatform } from "@beamlink/platform";
 import icon from "../assets/icon.png";
 
@@ -8,10 +9,18 @@ interface Props {
   onReady: () => void;
 }
 
+/**
+ * Shows backend start progress until the app can open.
+ */
 export default function StartupScreen({ onReady }: Props) {
   const platform = usePlatform();
   const [status, setStatus] = useState<Status>("starting");
   const [errorMsg, setErrorMsg] = useState("");
+  const onReadyRef = useRef(onReady);
+
+  useEffect(() => {
+    onReadyRef.current = onReady;
+  }, [onReady]);
 
   useEffect(() => {
     const handle = (data: {
@@ -21,7 +30,7 @@ export default function StartupScreen({ onReady }: Props) {
     }) => {
       if (data.status === "ready") {
         setStatus("ready");
-        setTimeout(onReady, 400);
+        setTimeout(() => onReadyRef.current(), 400);
       } else if (data.status === "error") {
         setStatus("error");
         setErrorMsg(data.message ?? "Unknown error");
@@ -32,88 +41,46 @@ export default function StartupScreen({ onReady }: Props) {
     void platform.onBackendStatus(handle);
   }, [platform]);
 
+  let statusText = "Starting backend...";
+  let statusColor = "var(--bl-text-secondary)";
+  if (status === "ready") {
+    statusText = "Ready";
+    statusColor = "var(--bl-success-text)";
+  } else if (status === "error") {
+    statusText = "Startup failed";
+    statusColor = "var(--bl-danger-text)";
+  }
+
   return (
-    <div style={styles.overlay}>
-      <div style={styles.center}>
-        <img src={icon} style={styles.logo} />
-
-        <div style={styles.appName}>BeamLink Agent</div>
-
-        {status === "starting" && (
-          <div style={styles.barTrack}>
-            <div style={styles.barFill} />
-          </div>
-        )}
-
-        {status === "ready" && (
-          <div style={{ ...styles.sub, color: "#4ade80" }}>Ready</div>
-        )}
-
-        {status === "error" && (
-          <>
-            <div style={{ ...styles.sub, color: "#f87171" }}>
-              Startup failed
-            </div>
-            <div style={styles.errorMsg}>{errorMsg}</div>
-          </>
-        )}
-      </div>
+    <div
+      style={{
+        position: "fixed",
+        inset: 0,
+        backgroundColor: "var(--bl-background)",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+      }}
+    >
+      <Stack align="center" gap="md">
+        <img
+          src={icon}
+          alt=""
+          style={{ width: 72, height: 72, borderRadius: 16 }}
+        />
+        <Title order={3} c="var(--bl-primary-text)">
+          BeamLink Agent
+        </Title>
+        {status === "starting" ? <Loader color="brand" type="dots" /> : null}
+        <Text size="sm" c={statusColor}>
+          {statusText}
+        </Text>
+        {status === "error" ? (
+          <Text size="xs" c="var(--bl-text-muted)" ta="center" maw={320}>
+            {errorMsg}
+          </Text>
+        ) : null}
+      </Stack>
     </div>
   );
 }
-
-const styles: Record<string, React.CSSProperties> = {
-  overlay: {
-    position: "fixed",
-    inset: 0,
-    background: "#1a0f0a",
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  center: {
-    display: "flex",
-    flexDirection: "column",
-    alignItems: "center",
-    gap: 16,
-  },
-  logo: {
-    width: 72,
-    height: 72,
-    borderRadius: 16,
-    marginBottom: 8,
-  },
-  appName: {
-    fontSize: 22,
-    fontWeight: 700,
-    color: "#fb923c",
-    letterSpacing: "0.05em",
-  },
-  barTrack: {
-    width: 200,
-    height: 3,
-    background: "#3b1f12",
-    borderRadius: 99,
-    overflow: "hidden",
-    marginTop: 8,
-  },
-  barFill: {
-    height: "100%",
-    width: "40%",
-    background: "#f97316",
-    borderRadius: 99,
-    animation: "slide 1.2s ease-in-out infinite",
-  },
-  sub: {
-    fontSize: 13,
-    color: "#7c5a47",
-    marginTop: 4,
-  },
-  errorMsg: {
-    fontSize: 11,
-    color: "#6b4030",
-    maxWidth: 320,
-    textAlign: "center",
-    lineHeight: 1.5,
-  },
-};

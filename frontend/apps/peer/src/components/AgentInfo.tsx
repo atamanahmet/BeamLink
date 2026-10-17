@@ -1,14 +1,27 @@
 import { useState } from "react";
-import { useAgent } from "../context/AgentContext";
+import {
+  Button,
+  Group,
+  Paper,
+  Stack,
+  Text,
+  TextInput,
+  Title,
+} from "@mantine/core";
+import { requestRename } from "../api/agentApi";
+import { useAgentStatusStore } from "../store/agentStatusStore";
 
 export const AgentInfo = () => {
-  const { agentStatus, requestRename } = useAgent();
+  const agentStatus = useAgentStatusStore((s) => s.agentStatus);
 
   const [editing, setEditing] = useState(false);
   const [newName, setNewName] = useState("");
   const [requestMessage, setRequestMessage] = useState("");
   const [loading, setLoading] = useState(false);
 
+  /**
+   * Asks the nexus to rename this agent, then exits edit mode.
+   */
   const handleConfirm = async () => {
     if (!newName.trim()) return;
     try {
@@ -25,87 +38,123 @@ export const AgentInfo = () => {
 
   if (!agentStatus) {
     return (
-      <div className="max-w-4xl mx-auto">
-        <div className="bg-black/70 backdrop-blur-xl border border-orange-500/20 rounded-2xl p-8">
-          <p className="text-orange-400">Loading...</p>
-        </div>
-      </div>
+      <Paper
+        withBorder
+        p="xl"
+        radius="md"
+        maw={896}
+        mx="auto"
+        w="100%"
+        style={{
+          backgroundColor: "var(--bl-surface)",
+          borderColor: "var(--bl-border)",
+        }}
+      >
+        <Text c="var(--bl-primary-text)">Loading...</Text>
+      </Paper>
     );
   }
 
   return (
-    <div className="max-w-4xl mx-auto">
-      <div className="bg-black/70 backdrop-blur-xl border border-orange-500/20 shadow-[0_0_40px_rgba(255,120,0,0.15)] rounded-2xl p-8">
-        <h2 className="text-3xl font-bold text-orange-400 mb-6">
-          Agent Information
-        </h2>
+    <Paper
+      withBorder
+      p="xl"
+      radius="md"
+      maw={896}
+      mx="auto"
+      w="100%"
+      style={{
+        backgroundColor: "var(--bl-surface)",
+        borderColor: "var(--bl-border)",
+      }}
+    >
+      <Title order={2} c="var(--bl-text-primary)" mb="md">
+        Agent Information
+      </Title>
 
-        <div className="space-y-4 text-orange-200">
-          <div>
-            <p className="text-sm text-orange-400">Agent Name</p>
-            {!editing ? (
-              <div className="flex items-center gap-4">
-                <p className="text-lg">{agentStatus.name}</p>
-                <button
-                  onClick={() => {
-                    setNewName(agentStatus.name);
-                    setEditing(true);
-                  }}
-                  className="text-sm text-orange-300 hover:text-orange-400 underline"
-                >
-                  Edit
-                </button>
-                {requestMessage && (
-                  <p className="text-sm text-orange-300">{requestMessage}</p>
-                )}
-              </div>
-            ) : (
-              <div className="flex items-center gap-3">
-                <input
-                  value={newName}
-                  onChange={(e) => setNewName(e.target.value)}
-                  className="px-3 py-1 bg-black border border-orange-500/30 rounded-md text-orange-200"
-                />
-                <button
-                  onClick={handleConfirm}
-                  disabled={loading}
-                  className="px-3 py-1 bg-orange-700 hover:bg-orange-600 rounded-md text-white text-sm"
-                >
-                  {loading ? "Saving..." : "Confirm"}
-                </button>
-                <button
-                  onClick={() => setEditing(false)}
-                  className="text-sm text-gray-400 hover:text-gray-300"
-                >
-                  Cancel
-                </button>
-              </div>
-            )}
-          </div>
-
-          <div>
-            <p className="text-sm text-orange-400">Agent ID</p>
-            <p className="text-sm font-mono text-orange-200/70">
-              {agentStatus.agentId ?? "Unregistered"}
-            </p>
-          </div>
-
-          <div>
-            <p className="text-sm text-orange-400">Upload Directory</p>
-            <p className="text-lg">{agentStatus.uploadDirectory}</p>
-          </div>
-
-          <div>
-            <p className="text-sm text-orange-400">Nexus</p>
-            <p className="text-lg">{agentStatus.nexusUrl}</p>
-          </div>
-
-          <div>
-            <p className="text-sm text-orange-400">Status</p>
-            <p className="text-lg text-green-400">{agentStatus.status}</p>
-          </div>
+      <Stack gap="md">
+        <div>
+          <Text size="sm" c="var(--bl-primary-text)" mb={4}>
+            Agent Name
+          </Text>
+          {!editing ? (
+            <Group gap="md">
+              <Text size="lg" c="var(--bl-text-primary)">
+                {agentStatus.name}
+              </Text>
+              <Button
+                variant="subtle"
+                color="brand"
+                size="compact-sm"
+                onClick={() => {
+                  setNewName(agentStatus.name);
+                  setEditing(true);
+                }}
+              >
+                Edit
+              </Button>
+              {requestMessage ? (
+                <Text size="sm" c="var(--bl-text-secondary)">
+                  {requestMessage}
+                </Text>
+              ) : null}
+            </Group>
+          ) : (
+            <Group gap="sm">
+              <TextInput
+                value={newName}
+                onChange={(e) => setNewName(e.currentTarget.value)}
+              />
+              <Button onClick={handleConfirm} disabled={loading}>
+                {loading ? "Saving..." : "Confirm"}
+              </Button>
+              <Button
+                variant="subtle"
+                color="gray"
+                onClick={() => setEditing(false)}
+              >
+                Cancel
+              </Button>
+            </Group>
+          )}
         </div>
-      </div>
-    </div>
+
+        <div>
+          <Text size="sm" c="var(--bl-primary-text)" mb={4}>
+            Agent ID
+          </Text>
+          <Text size="sm" ff="monospace" c="var(--bl-text-secondary)">
+            {agentStatus.agentId ?? "Unregistered"}
+          </Text>
+        </div>
+
+        <div>
+          <Text size="sm" c="var(--bl-primary-text)" mb={4}>
+            Upload Directory
+          </Text>
+          <Text size="lg" c="var(--bl-text-primary)">
+            {agentStatus.uploadDirectory}
+          </Text>
+        </div>
+
+        <div>
+          <Text size="sm" c="var(--bl-primary-text)" mb={4}>
+            Nexus
+          </Text>
+          <Text size="lg" c="var(--bl-text-primary)">
+            {agentStatus.nexusUrl}
+          </Text>
+        </div>
+
+        <div>
+          <Text size="sm" c="var(--bl-primary-text)" mb={4}>
+            Status
+          </Text>
+          <Text size="lg" c="var(--bl-success-text)">
+            {agentStatus.status}
+          </Text>
+        </div>
+      </Stack>
+    </Paper>
   );
 };
