@@ -1,3 +1,20 @@
+export type { PauseOwner, TransferSummary, TransferType } from "./transfer.ts";
+export type { PeerSummary } from "./peer.ts";
+export type {
+  DispatchResultItem,
+  InitiateDispatchRequest,
+  TransferLogEntry,
+  TransferApi,
+  PeersApi,
+  HealthApi,
+  UploadDirResponse,
+  SpeedCapResponse,
+  ResumePolicyMode,
+  ResumePolicyResponse,
+  ChangeCredentialsRequest,
+  SettingsApi,
+} from "./api.ts";
+
 export type Platform = {
   readonly env: {
     readonly sep: string;
