@@ -1,6 +1,7 @@
 package com.atamanahmet.beamlink.nexus.domain;
 
 import com.atamanahmet.beamlink.nexus.domain.enums.GroupTransferStatus;
+import com.atamanahmet.beamlink.nexus.domain.enums.PauseOwner;
 
 import jakarta.persistence.*;
 import lombok.Getter;
@@ -44,6 +45,9 @@ public class BatchTransfer {
         @Enumerated(EnumType.STRING)
         @Column(nullable = false)
         private GroupTransferStatus status;
+        @Enumerated(EnumType.STRING)
+        @Column
+        private PauseOwner pausedBy;
         @Column(nullable = false)
         private Instant createdAt;
         @Column

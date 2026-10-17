@@ -5,17 +5,18 @@ import com.atamanahmet.beamlink.agent.domain.BatchTransfer;
 import com.atamanahmet.beamlink.agent.domain.DirectoryTransfer;
 import com.atamanahmet.beamlink.agent.domain.FileTransfer;
 import com.atamanahmet.beamlink.agent.domain.enums.GroupTransferStatus;
+import com.atamanahmet.beamlink.agent.domain.enums.PauseOwner;
 import com.atamanahmet.beamlink.agent.domain.enums.TransferStatus;
 import com.atamanahmet.beamlink.agent.repository.BatchTransferRepository;
 import com.atamanahmet.beamlink.agent.repository.DirectoryTransferRepository;
 import com.atamanahmet.beamlink.agent.repository.FileTransferRepository;
-import com.atamanahmet.beamlink.agent.util.PathNormalizer;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.ApplicationArguments;
 import org.springframework.boot.ApplicationRunner;
 import org.springframework.stereotype.Component;
-import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.support.TransactionTemplate;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -34,8 +35,10 @@ public class TransferStartupJob implements ApplicationRunner {
     private final DirectoryTransferService directoryTransferService;
     private final BatchTransferService batchTransferService;
     private final GroupTransferAsyncSender groupTransferAsyncSender;
+    private final TransferSideResolver sideResolver;
+    private final TransferManagementService transferManagementService;
+    private final PlatformTransactionManager transactionManager;
 
-    @Transactional
     @Override
     public void run(ApplicationArguments args) {
         UUID agentId;
@@ -51,23 +54,51 @@ public class TransferStartupJob implements ApplicationRunner {
             return;
         }
 
-        pauseInterruptedStandaloneTransfers(agentId);
-        handleInterruptedGroupTransfers(agentId);
+        pauseActiveReceivingTransfers();
+        TransactionTemplate tx = new TransactionTemplate(transactionManager);
+        tx.executeWithoutResult(status -> {
+            pauseInterruptedStandaloneTransfers();
+            handleInterruptedGroupTransfers(agentId);
+        });
     }
 
     /**
-     * Standalone = not part of a batch or directory transfer.
-     * Mark as PAUSED so user can manually resume.
+     * Pauses ACTIVE receive rows via pauseSingle so channels flush and close.
      */
-    private void pauseInterruptedStandaloneTransfers(UUID agentId) {
+    private void pauseActiveReceivingTransfers() {
+        List<FileTransfer> active = transferRepository.findByStatus(TransferStatus.ACTIVE);
+        int paused = 0;
+        for (FileTransfer ft : active) {
+            PauseOwner side = sideResolver.resolve(
+                    ft.getSourceAgentId(), ft.getTargetAgentId(), ft.getTargetIp());
+            if (side != PauseOwner.TARGET) {
+                continue;
+            }
+            try {
+                transferManagementService.pauseSingle(ft.getTransferId());
+                paused++;
+                log.info("Paused active receive on startup: {} ({})",
+                        ft.getFileName(), ft.getTransferId());
+            } catch (Exception e) {
+                log.warn("Startup receive pause failed for {}: {}",
+                        ft.getTransferId(), e.getMessage());
+            }
+        }
+        if (paused > 0) {
+            log.info("Paused {} active receive transfer(s) on startup", paused);
+        }
+    }
+
+    /**
+     * Standalone ACTIVE or PENDING become PAUSED owned by this side.
+     */
+    private void pauseInterruptedStandaloneTransfers() {
         List<FileTransfer> interrupted = new ArrayList<>();
         interrupted.addAll(transferRepository.findByStatus(TransferStatus.ACTIVE));
         interrupted.addAll(transferRepository.findByStatus(TransferStatus.PENDING));
 
         List<FileTransfer> toPause = interrupted.stream()
-                .filter(t -> agentId.equals(t.getSourceAgentId()))
                 .filter(t -> t.getDirectoryTransferId() == null && t.getBatchTransferId() == null)
-                .filter(t -> PathNormalizer.normalize(t.getFilePath()) != null)
                 .toList();
 
         if (toPause.isEmpty()) {
@@ -75,7 +106,7 @@ public class TransferStartupJob implements ApplicationRunner {
             return;
         }
 
-        toPause.forEach(t -> t.setStatus(TransferStatus.PAUSED));
+        toPause.forEach(this::pauseOwnedByThisSide);
         transferRepository.saveAll(toPause);
         log.info("Paused {} interrupted standalone transfer(s) on startup", toPause.size());
     }
@@ -95,13 +126,18 @@ public class TransferStartupJob implements ApplicationRunner {
         if (interrupted.isEmpty()) return;
 
         for (DirectoryTransfer dt : interrupted) {
-            /* Pause all active children first, then pause the parent */
             List<FileTransfer> activeChildren = transferRepository
                     .findByDirectoryTransferIdAndStatus(dt.getDirectoryTransferId(), TransferStatus.ACTIVE);
-            activeChildren.forEach(ft -> ft.setStatus(TransferStatus.PAUSED));
+            activeChildren.forEach(this::pauseOwnedByThisSide);
             transferRepository.saveAll(activeChildren);
 
-            dt.setStatus(GroupTransferStatus.PAUSED);
+            PauseOwner side = sideResolver.resolve(
+                    dt.getSourceAgentId(), dt.getTargetAgentId(), dt.getTargetIp());
+            dt.setPausedBy(side);
+            List<FileTransfer> children = transferRepository
+                    .findByDirectoryTransferId(dt.getDirectoryTransferId());
+            dt.setStatus(GroupStatusRollup.fromChildren(
+                    children.stream().map(FileTransfer::getStatus).toList()));
             directoryTransferRepository.save(dt);
             log.info("Paused interrupted directory transfer on startup: {} ({})",
                     dt.getDirectoryName(), dt.getDirectoryTransferId());
@@ -130,13 +166,18 @@ public class TransferStartupJob implements ApplicationRunner {
         if (interrupted.isEmpty()) return;
 
         for (BatchTransfer bt : interrupted) {
-            /* Pause all active children first, then pause the parent */
             List<FileTransfer> activeChildren = transferRepository
                     .findByBatchTransferIdAndStatus(bt.getBatchTransferId(), TransferStatus.ACTIVE);
-            activeChildren.forEach(ft -> ft.setStatus(TransferStatus.PAUSED));
+            activeChildren.forEach(this::pauseOwnedByThisSide);
             transferRepository.saveAll(activeChildren);
 
-            bt.setStatus(GroupTransferStatus.PAUSED);
+            PauseOwner side = sideResolver.resolve(
+                    bt.getSourceAgentId(), bt.getTargetAgentId(), bt.getTargetIp());
+            bt.setPausedBy(side);
+            List<FileTransfer> children = transferRepository
+                    .findByBatchTransferId(bt.getBatchTransferId());
+            bt.setStatus(GroupStatusRollup.fromChildren(
+                    children.stream().map(FileTransfer::getStatus).toList()));
             batchTransferRepository.save(bt);
             log.info("Paused interrupted batch transfer on startup: {}", bt.getBatchTransferId());
 
@@ -152,5 +193,15 @@ public class TransferStartupJob implements ApplicationRunner {
                 log.info("Auto-resumed batch transfer: {}", bt.getBatchTransferId());
             }
         }
+    }
+
+    /**
+     * Marks one row PAUSED owned by this app side.
+     */
+    private void pauseOwnedByThisSide(FileTransfer ft) {
+        PauseOwner side = sideResolver.resolve(
+                ft.getSourceAgentId(), ft.getTargetAgentId(), ft.getTargetIp());
+        ft.setStatus(TransferStatus.PAUSED);
+        ft.setPausedBy(side);
     }
 }

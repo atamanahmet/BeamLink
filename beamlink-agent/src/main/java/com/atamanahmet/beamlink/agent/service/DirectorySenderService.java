@@ -8,17 +8,13 @@ import com.atamanahmet.beamlink.agent.dto.InitiateDirectoryTransferRequest;
 import com.atamanahmet.beamlink.agent.dto.InitiateDirectoryTransferResponse;
 import com.atamanahmet.beamlink.agent.dto.ReceiveDirectoryRequest;
 import com.atamanahmet.beamlink.agent.exception.FileTransferException;
-import com.atamanahmet.beamlink.agent.http.HttpSender;
+import com.atamanahmet.beamlink.agent.http.TransferHttpClient;
 import com.atamanahmet.beamlink.agent.util.PathNormalizer;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
 import java.io.IOException;
-import java.net.URI;
-import java.net.http.HttpRequest;
-import java.net.http.HttpResponse;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
@@ -37,9 +33,8 @@ public class DirectorySenderService {
     private final DirectoryTransferService directoryTransferService;
     private final AgentConfig agentConfig;
     private final GroupTransferAsyncSender groupTransferAsyncSender;
-    private final ObjectMapper objectMapper;
     private final AgentService agentService;
-    private final HttpSender httpSender;
+    private final TransferHttpClient transferHttpClient;
 
     public InitiateDirectoryTransferResponse initiate(InitiateDirectoryTransferRequest request) {
         String cleanedPath = PathNormalizer.normalize(request.getSourcePath());
@@ -177,6 +172,9 @@ public class DirectorySenderService {
         );
     }
 
+    /**
+     * Registers the directory payload on the target agent.
+     */
     private void registerOnTarget(
             InitiateDirectoryTransferRequest request,
             UUID directoryTransferId,
@@ -185,36 +183,18 @@ public class DirectorySenderService {
             WalkResult walk,
             List<ReceiveDirectoryRequest.FileEntry> fileEntries
     ) {
-        ReceiveDirectoryRequest payload = new ReceiveDirectoryRequest();
-        payload.setDirectoryTransferId(directoryTransferId);
-        payload.setDispatchId(request.getDispatchId());
-        payload.setSourceAgentId(sourceAgentId);
-        payload.setDirectoryName(directoryName);
-        payload.setTotalFiles(walk.files().size());
-        payload.setTotalSize(walk.totalSize());
-        payload.setEmptyDirectories(walk.emptyDirectories());
-        payload.setFiles(fileEntries);
-
-        try {
-            String body = objectMapper.writeValueAsString(payload);
-            HttpRequest httpRequest = HttpRequest.newBuilder()
-                    .uri(URI.create("http://" + request.getTargetIp() + ":" + request.getTargetPort() + "/api/transfers/receive-directory"))
-                    .header("Content-Type", "application/json")
-                    .POST(HttpRequest.BodyPublishers.ofString(body))
-                    .build();
-
-            HttpResponse<String> response = httpSender.send(httpRequest);
-            if (response.statusCode() != 200) {
-                throw new FileTransferException("Target rejected directory registration. Status: " + response.statusCode(), null);
-            }
-        } catch (FileTransferException e) {
-            throw e;
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-            throw new FileTransferException("Cannot reach target agent", e);
-        } catch (IOException e) {
-            throw new FileTransferException("Cannot reach target agent", e);
-        }
+        transferHttpClient.registerDirectory(
+                request.getTargetIp(),
+                request.getTargetPort(),
+                directoryTransferId,
+                request.getDispatchId(),
+                sourceAgentId,
+                directoryName,
+                walk.files().size(),
+                walk.totalSize(),
+                walk.emptyDirectories(),
+                fileEntries
+        );
     }
 
     private record WalkResult(List<FileEntry> files, List<String> emptyDirectories, long totalSize) {

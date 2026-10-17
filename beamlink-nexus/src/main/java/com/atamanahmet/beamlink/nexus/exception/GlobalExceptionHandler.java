@@ -54,6 +54,21 @@ public class GlobalExceptionHandler {
                 .body(Map.of("success", false, "error", "File transfer failed", "message", ex.getMessage()));
     }
 
+    @ExceptionHandler(TransferProtocolException.class)
+    public ResponseEntity<Map<String, Object>> handleTransferProtocol(TransferProtocolException ex) {
+        if (ex.getPausedBy() != null) {
+            return ResponseEntity
+                    .status(ex.getStatus())
+                    .body(Map.of(
+                            "code", ex.getCode(),
+                            "message", ex.getMessage(),
+                            "pausedBy", ex.getPausedBy().name()));
+        }
+        return ResponseEntity
+                .status(ex.getStatus())
+                .body(Map.of("code", ex.getCode(), "message", ex.getMessage()));
+    }
+
     @ExceptionHandler(MaxUploadSizeExceededException.class)
     public ResponseEntity<Map<String, Object>> handleMaxUploadSizeExceeded(MaxUploadSizeExceededException ex) {
         log.warn("File size exceeds maximum allowed size");

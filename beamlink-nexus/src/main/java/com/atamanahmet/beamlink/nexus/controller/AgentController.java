@@ -2,6 +2,7 @@ package com.atamanahmet.beamlink.nexus.controller;
 
 import com.atamanahmet.beamlink.nexus.domain.enums.AgentState;
 import com.atamanahmet.beamlink.nexus.dto.AgentIdentityResponse;
+import com.atamanahmet.beamlink.nexus.dto.AgentPingResponse;
 import com.atamanahmet.beamlink.nexus.dto.AgentRegistrationRequest;
 import com.atamanahmet.beamlink.nexus.dto.AgentRegistrationResponse;
 import com.atamanahmet.beamlink.nexus.dto.AgentStatusRequest;
@@ -9,6 +10,7 @@ import com.atamanahmet.beamlink.nexus.dto.AgentStatusResponse;
 import com.atamanahmet.beamlink.nexus.security.AgentTokenService;
 import com.atamanahmet.beamlink.nexus.security.DynamicCorsRegistry;
 import com.atamanahmet.beamlink.nexus.service.AgentService;
+import com.atamanahmet.beamlink.nexus.service.NexusResumePolicyStore;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.ResponseEntity;
@@ -25,6 +27,7 @@ public class AgentController {
         private final AgentService agentService;
         private final DynamicCorsRegistry corsRegistry;
         private final AgentTokenService agentTokenService;
+        private final NexusResumePolicyStore resumePolicyStore;
 
         /**
          * Agent registration
@@ -61,8 +64,9 @@ public class AgentController {
         }
 
         @GetMapping("/ping")
-        public ResponseEntity<Void> ping() {
-                return ResponseEntity.ok().build();
+        public ResponseEntity<AgentPingResponse> ping() {
+                return ResponseEntity.ok(
+                                new AgentPingResponse(resumePolicyStore.getMode().name()));
         }
 
         /**

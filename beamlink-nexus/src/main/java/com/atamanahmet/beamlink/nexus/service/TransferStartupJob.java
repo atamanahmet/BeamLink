@@ -1,20 +1,20 @@
 package com.atamanahmet.beamlink.nexus.service;
 
 import com.atamanahmet.beamlink.nexus.domain.FileTransfer;
+import com.atamanahmet.beamlink.nexus.domain.enums.PauseOwner;
 import com.atamanahmet.beamlink.nexus.domain.enums.TransferStatus;
 import com.atamanahmet.beamlink.nexus.repository.FileTransferRepository;
-import com.atamanahmet.beamlink.nexus.util.PathNormalizer;
 import lombok.RequiredArgsConstructor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.boot.ApplicationArguments;
 import org.springframework.boot.ApplicationRunner;
 import org.springframework.stereotype.Component;
-import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.support.TransactionTemplate;
 
 import java.util.ArrayList;
 import java.util.List;
-import java.util.UUID;
 
 @Component
 @RequiredArgsConstructor
@@ -23,38 +23,67 @@ public class TransferStartupJob implements ApplicationRunner {
     private static final Logger log = LoggerFactory.getLogger(TransferStartupJob.class);
 
     private final FileTransferRepository transferRepository;
-    private final AgentService agentService;
-
-    private static final UUID NEXUS_ID = UUID.fromString("00000000-0000-0000-0000-000000000000");
+    private final TransferSideResolver sideResolver;
+    private final TransferManagementService transferManagementService;
+    private final PlatformTransactionManager transactionManager;
 
     @Override
-    @Transactional
     public void run(ApplicationArguments args) {
-        UUID agentId = NEXUS_ID;
+        pauseActiveReceivingTransfers();
+        new TransactionTemplate(transactionManager).executeWithoutResult(
+                status -> pauseInterruptedTransfers());
+    }
 
+    /**
+     * Pauses ACTIVE receive rows via pauseSingle so channels flush and close.
+     */
+    private void pauseActiveReceivingTransfers() {
+        List<FileTransfer> active = transferRepository.findByStatus(TransferStatus.ACTIVE);
+        int paused = 0;
+        for (FileTransfer t : active) {
+            PauseOwner side = sideResolver.resolve(
+                    t.getSourceAgentId(), t.getTargetAgentId(), t.getTargetIp());
+            if (side != PauseOwner.TARGET) {
+                continue;
+            }
+            try {
+                transferManagementService.pauseSingle(t.getTransferId());
+                paused++;
+                log.info("Paused active receive on startup: {} ({})",
+                        t.getFileName(), t.getTransferId());
+            } catch (Exception e) {
+                log.warn("Startup receive pause failed for {}: {}",
+                        t.getTransferId(), e.getMessage());
+            }
+        }
+        if (paused > 0) {
+            log.info("Paused {} active receive transfer(s) on startup", paused);
+        }
+    }
+
+    /**
+     * Remaining ACTIVE or PENDING become PAUSED owned by this side.
+     */
+    private void pauseInterruptedTransfers() {
         List<FileTransfer> interrupted = new ArrayList<>();
         interrupted.addAll(transferRepository.findByStatus(TransferStatus.ACTIVE));
         interrupted.addAll(transferRepository.findByStatus(TransferStatus.PENDING));
 
-        // Only pause transfers where THIS agent is the sender
-        // Sender will reconnect and resume
-        List<FileTransfer> pausedTransfers = interrupted.stream()
-                .filter(t -> agentId.equals(t.getSourceAgentId()))
-                .filter(t -> PathNormalizer.normalize(t.getFilePath()) != null)
-                .toList();
-
-        if (pausedTransfers.isEmpty()) {
+        if (interrupted.isEmpty()) {
             log.debug("No interrupted transfers found on startup");
             return;
         }
 
-        for (FileTransfer t : pausedTransfers) {
+        for (FileTransfer t : interrupted) {
+            PauseOwner side = sideResolver.resolve(
+                    t.getSourceAgentId(), t.getTargetAgentId(), t.getTargetIp());
             t.setStatus(TransferStatus.PAUSED);
+            t.setPausedBy(side);
             log.info("Paused interrupted transfer on startup: {} ({})",
                     t.getFileName(), t.getTransferId());
         }
 
-        transferRepository.saveAll(pausedTransfers);
-        log.info("Paused {} interrupted transfer(s) on startup", pausedTransfers.size());
+        transferRepository.saveAll(interrupted);
+        log.info("Paused {} interrupted transfer(s) on startup", interrupted.size());
     }
 }

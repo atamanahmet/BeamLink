@@ -2,7 +2,6 @@ package com.atamanahmet.beamlink.agent.service;
 
 import com.atamanahmet.beamlink.agent.domain.FileTransfer;
 import com.atamanahmet.beamlink.agent.domain.enums.GroupTransferStatus;
-import com.atamanahmet.beamlink.agent.domain.enums.TransferStatus;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.scheduling.annotation.Async;
@@ -58,31 +57,8 @@ public class GroupTransferAsyncSender {
     }
 
     private void resolveGroupOutcome(UUID groupId, GroupTransferService groupService) {
-        List<FileTransfer> children = groupService.getAllChildren(groupId);
-
-        long total = children.size();
-        long completed = children.stream()
-                .filter(ft -> ft.getStatus() == TransferStatus.COMPLETED)
-                .count();
-        long cancelled = children.stream()
-                .filter(ft -> ft.getStatus() == TransferStatus.CANCELLED)
-                .count();
-        long failed = children.stream()
-                .filter(ft -> ft.getStatus() == TransferStatus.FAILED)
-                .count();
-
-        if (cancelled > 0) {
-            groupService.markCancelled(groupId);
-            log.info("Group transfer cancelled: {}", groupId);
-        } else if (completed == total) {
-            groupService.markCompleted(groupId);
-            log.info("Group transfer completed: {}", groupId);
-        } else if (completed > 0 && completed + failed == total) {
-            groupService.markPartial(groupId);
-            log.info("Group transfer partial: {}/{} completed", completed, total);
-        } else {
-            groupService.markFailed(groupId);
-            log.warn("Group transfer failed: {}", groupId);
-        }
+        groupService.applyChildStatusRollup(groupId);
+        GroupTransferStatus status = groupService.getStatus(groupId);
+        log.info("Group transfer {} resolved to {}", groupId, status);
     }
 }

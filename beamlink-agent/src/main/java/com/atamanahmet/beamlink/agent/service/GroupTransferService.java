@@ -25,4 +25,9 @@ public interface GroupTransferService {
     void markFailed(UUID groupId);
 
     void markCancelled(UUID groupId);
+
+    /**
+     * Sets group status from the child file statuses.
+     */
+    void applyChildStatusRollup(UUID groupId);
 }

@@ -52,6 +52,11 @@ nexus:
     username: ${NEXUS_ADMIN_USERNAME}
     password: ${NEXUS_ADMIN_PASSWORD}
 
+beamlink:
+  transfer:
+    chunk-size-bytes: 524288
+    window-size: 1
+
 logging:
   level:
     org.flywaydb: DEBUG

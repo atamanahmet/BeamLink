@@ -25,14 +25,23 @@ public class SettingsService {
     }
 
     public double getDouble(SettingKey key, double defaultValue) {
-        return get(key).map(v -> {
-            try {
-                return Double.parseDouble(v);
-            } catch (NumberFormatException e) {
-                log.warn("Invalid double for key {}, using default {}", key, defaultValue);
-                return defaultValue;
-            }
-        }).orElse(defaultValue);
+        return getOptionalDouble(key).orElse(defaultValue);
+    }
+
+    /**
+     * Parses a stored double setting when present.
+     */
+    public Optional<Double> getOptionalDouble(SettingKey key) {
+        Optional<String> raw = get(key);
+        if (raw.isEmpty()) {
+            return Optional.empty();
+        }
+        try {
+            return Optional.of(Double.parseDouble(raw.get()));
+        } catch (NumberFormatException e) {
+            log.warn("Invalid double for key {}", key);
+            return Optional.empty();
+        }
     }
 
     public void set(SettingKey key, String value) {
@@ -41,5 +50,12 @@ public class SettingsService {
 
     public void set(SettingKey key, double value) {
         set(key, String.valueOf(value));
+    }
+
+    /**
+     * Removes a setting row so the cache can treat it as unset.
+     */
+    public void clear(SettingKey key) {
+        settingsRepository.findByKey(key).ifPresent(settingsRepository::delete);
     }
 }

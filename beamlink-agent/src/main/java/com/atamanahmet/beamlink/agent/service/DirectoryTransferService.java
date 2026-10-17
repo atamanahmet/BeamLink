@@ -121,6 +121,18 @@ public class DirectoryTransferService implements GroupTransferService {
         directoryTransferRepository.save(dt);
     }
 
+    @Override
+    public void applyChildStatusRollup(UUID groupId) {
+        DirectoryTransfer dt = get(groupId);
+        GroupTransferStatus status = GroupStatusRollup.fromChildren(
+                getAllChildren(groupId).stream().map(FileTransfer::getStatus).toList());
+        dt.setStatus(status);
+        if (status == GroupTransferStatus.COMPLETED) {
+            dt.setCompletedAt(Instant.now());
+        }
+        directoryTransferRepository.save(dt);
+    }
+
     public void saveChildren(List<FileTransfer> fileTransfers) {
         fileTransferRepository.saveAll(fileTransfers);
     }

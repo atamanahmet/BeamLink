@@ -2,6 +2,7 @@ package com.atamanahmet.beamlink.agent.service;
 
 import com.atamanahmet.beamlink.agent.config.NexusAddressHolder;
 import com.atamanahmet.beamlink.agent.domain.enums.AgentState;
+import com.atamanahmet.beamlink.agent.dto.AgentPingResponse;
 import com.atamanahmet.beamlink.agent.dto.StatusUpdateResponse;
 import com.atamanahmet.beamlink.agent.dto.TransferLogDTO;
 import com.atamanahmet.beamlink.agent.event.AgentApprovedEvent;
@@ -33,6 +34,7 @@ public class NexusStatusService {
     private final NetworkRegistrationService networkRegistrationService;
     private final NexusAddressHolder nexusAddressHolder;
     private final PeerCacheService peerCacheService;
+    private final AgentResumePolicyHolder resumePolicyHolder;
     private final WebClient nexusWebClient = WebClient.create();
 
     @EventListener
@@ -96,13 +98,16 @@ public class NexusStatusService {
 
     private boolean isNexusReachable() {
         try {
-            nexusWebClient.get()
+            AgentPingResponse ping = nexusWebClient.get()
                     .uri(nexusAddressHolder.getNexusUrl() + "/api/agents/ping")
                     .retrieve()
-                    .toBodilessEntity()
+                    .bodyToMono(AgentPingResponse.class)
                     .subscribeOn(Schedulers.boundedElastic())
                     .timeout(Duration.ofSeconds(5))
                     .block();
+            if (ping != null) {
+                resumePolicyHolder.updateFromPing(ping.resumePolicy());
+            }
             return true;
         } catch (Exception e) {
             log.debug("Nexus ping failed: {}", e.getMessage());

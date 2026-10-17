@@ -27,6 +27,7 @@ public class TransferExpiryJob {
     private final AgentConfig agentConfig;
     private final FileTransferRepository transferRepository;
     private final StorageService storageService;
+    private final ChunkReceiverService chunkReceiverService;
 
     @Scheduled(fixedDelay = 3_600_000)
     @Transactional
@@ -38,6 +39,7 @@ public class TransferExpiryJob {
         if (!stale.isEmpty()) {
             for(FileTransfer transfer : stale) {
                 transfer.setStatus(TransferStatus.EXPIRED);
+                chunkReceiverService.onReceiveExpired(transfer.getTransferId());
                 storageService.deletePartialFile(transfer.getFileName());
                 log.info("Transfer expired: {} ({})", transfer.getFileName(), transfer.getTransferId());
             }

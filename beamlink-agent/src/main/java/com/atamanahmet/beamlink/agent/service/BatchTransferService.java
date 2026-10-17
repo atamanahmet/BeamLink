@@ -119,4 +119,16 @@ public class BatchTransferService implements GroupTransferService {
         bt.setStatus(GroupTransferStatus.CANCELLED);
         batchTransferRepository.save(bt);
     }
+
+    @Override
+    public void applyChildStatusRollup(UUID groupId) {
+        BatchTransfer bt = get(groupId);
+        GroupTransferStatus status = GroupStatusRollup.fromChildren(
+                getAllChildren(groupId).stream().map(FileTransfer::getStatus).toList());
+        bt.setStatus(status);
+        if (status == GroupTransferStatus.COMPLETED) {
+            bt.setCompletedAt(Instant.now());
+        }
+        batchTransferRepository.save(bt);
+    }
 }

@@ -5,6 +5,7 @@ import com.atamanahmet.beamlink.nexus.domain.enums.TransferStatus;
 import com.atamanahmet.beamlink.nexus.dto.*;
 import com.atamanahmet.beamlink.nexus.exception.FileTransferException;
 import com.atamanahmet.beamlink.nexus.service.ChunkReceiverService;
+import com.atamanahmet.beamlink.nexus.service.TransferManagementService;
 import com.atamanahmet.beamlink.nexus.service.TransferSenderService;
 import jakarta.servlet.http.HttpServletRequest;
 import lombok.RequiredArgsConstructor;
@@ -27,6 +28,7 @@ public class TransferInboundController {
 
     private final ChunkReceiverService receiverService;
     private final TransferSenderService senderService;
+    private final TransferManagementService managementService;
 
     /**
      * Source registers the transfer before sending any chunks, target prepares partial file on disk
@@ -81,9 +83,9 @@ public class TransferInboundController {
             @RequestHeader("Content-Range") String contentRange,
             HttpServletRequest request) throws IOException {
 
-        long offset = parseOffset(contentRange);
+        long[] range = parseContentRange(contentRange);
         ChunkAckResponse ack = receiverService.receiveChunk(
-                transferId, offset, request.getInputStream());
+                transferId, range[0], range[1], request.getInputStream());
 
         return ResponseEntity.status(HttpStatus.OK).body(ack);
     }
@@ -98,13 +100,22 @@ public class TransferInboundController {
     }
 
     /**
-     * Parses byte offset from Content-Range header
+     * Parses offset and length from Content-Range bytes start-end/total.
      */
-    private long parseOffset(String contentRange) {
+    private long[] parseContentRange(String contentRange) {
         try {
             String bytesPart = contentRange.replace("bytes ", "");
-            String offsetStr = bytesPart.substring(0, bytesPart.indexOf('-'));
-            return Long.parseLong(offsetStr.trim());
+            int dash = bytesPart.indexOf('-');
+            int slash = bytesPart.indexOf('/');
+            long start = Long.parseLong(bytesPart.substring(0, dash).trim());
+            long end = Long.parseLong(bytesPart.substring(dash + 1, slash).trim());
+            long length = end - start + 1L;
+            if (length < 0L) {
+                throw new FileTransferException("Invalid Content-Range length: " + contentRange, null);
+            }
+            return new long[] { start, length };
+        } catch (FileTransferException e) {
+            throw e;
         } catch (Exception e) {
             throw new FileTransferException("Invalid Content-Range header: " + contentRange, e);
         }
@@ -117,6 +128,26 @@ public class TransferInboundController {
     public ResponseEntity<Void> cancelNotify(@PathVariable UUID transferId) {
         receiverService.cancelReceive(transferId);
         senderService.cancel(transferId);
+        return ResponseEntity.ok().build();
+    }
+
+    /**
+     * Peer notifies us to pause our side of the transfer
+     */
+    @PostMapping("/{transferId}/pause-notify")
+    public ResponseEntity<Void> pauseNotify(
+            @PathVariable UUID transferId,
+            @RequestBody PauseNotifyRequest request) {
+        managementService.applyPauseNotify(transferId, request.getPausedBy());
+        return ResponseEntity.ok().build();
+    }
+
+    /**
+     * Peer notifies us to resume our side of the transfer
+     */
+    @PostMapping("/{transferId}/resume-notify")
+    public ResponseEntity<Void> resumeNotify(@PathVariable UUID transferId) {
+        managementService.applyResumeNotify(transferId);
         return ResponseEntity.ok().build();
     }
 }

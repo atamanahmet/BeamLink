@@ -1,7 +1,7 @@
 package com.atamanahmet.beamlink.nexus.service;
 
 import com.atamanahmet.beamlink.nexus.config.StorageConfig;
-import com.atamanahmet.beamlink.nexus.constants.TransferConstants;
+import com.atamanahmet.beamlink.nexus.config.TransferProperties;
 import com.atamanahmet.beamlink.nexus.domain.FileTransfer;
 import com.atamanahmet.beamlink.nexus.domain.enums.SettingKey;
 import com.atamanahmet.beamlink.nexus.exception.InsufficientDiskSpaceException;
@@ -24,8 +24,8 @@ public class StorageService {
 
     private final StorageConfig storageConfig;
     private final SettingsService settingsService;
+    private final TransferProperties transferProperties;
     private static final long DISK_BUFFER_BYTES = 100L * 1024 * 1024;
-    private static final int BUFFER_SIZE = TransferConstants.CHUNK_SIZE;
 
     @Getter
     private Path uploadsDir;
@@ -96,7 +96,7 @@ public class StorageService {
     /** Writes chunk at offset, returns bytes written. */
     public long writeChunk(Path path, long offset, InputStream stream) {
         long bytesWritten = 0;
-        byte[] buffer = new byte[BUFFER_SIZE];
+        byte[] buffer = new byte[transferProperties.getChunkSizeBytes()];
 
         try (RandomAccessFile raf = new RandomAccessFile(path.toFile(), "rw")) {
             raf.seek(offset);
@@ -151,10 +151,10 @@ public class StorageService {
         Path finalPath = uploadsDir.resolve(filename);
 
         long bytesWritten = 0;
-        byte[] buffer = new byte[BUFFER_SIZE];
+        byte[] buffer = new byte[transferProperties.getChunkSizeBytes()];
 
         try (BufferedOutputStream out = new BufferedOutputStream(
-                new FileOutputStream(tmpPath.toFile()), BUFFER_SIZE)) {
+                new FileOutputStream(tmpPath.toFile()), transferProperties.getChunkSizeBytes())) {
             int bytesRead;
             while ((bytesRead = inputStream.read(buffer)) != -1) {
                 out.write(buffer, 0, bytesRead);

@@ -1,8 +1,10 @@
 package com.atamanahmet.beamlink.nexus.service;
 
+import com.atamanahmet.beamlink.nexus.domain.Agent;
 import com.atamanahmet.beamlink.nexus.domain.TransferLog;
 import com.atamanahmet.beamlink.nexus.dto.LogSyncRequest;
 import com.atamanahmet.beamlink.nexus.dto.TransferStats;
+import com.atamanahmet.beamlink.nexus.repository.AgentRepository;
 import com.atamanahmet.beamlink.nexus.repository.TransferLogRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -23,23 +25,28 @@ import java.util.UUID;
 public class TransferLogService {
 
     private final TransferLogRepository transferLogRepository;
+    private final AgentRepository agentRepository;
+    private final NexusService nexusService;
 
     @Transactional
     public List<UUID> sync(UUID agentId, List<LogSyncRequest> incoming) {
         List<TransferLog> toSave = incoming.stream()
                 .filter(r -> r.getId() != null)
                 .filter(r -> !transferLogRepository.existsById(r.getId()))
-                .map(r -> TransferLog.builder()
-                        .id(r.getId())
-                        .fromAgentId(agentId)
-                        .fromAgentName(r.getFromAgentName())
-                        .toAgentId(r.getToAgentId())
-                        .toAgentName(r.getToAgentName())
-                        .filename(r.getFilename())
-                        .fileSize(r.getFileSize())
-                        .averageSpeedMbps(r.getAverageSpeedMbps())
-                        .timestamp(r.getTimestamp() != null ? r.getTimestamp() : Instant.now())
-                        .build())
+                .map(r -> {
+                    UUID fromId = r.getFromAgentId();
+                    return TransferLog.builder()
+                            .id(r.getId())
+                            .fromAgentId(fromId)
+                            .fromAgentName(resolveFromAgentName(fromId, r.getFromAgentName()))
+                            .toAgentId(r.getToAgentId())
+                            .toAgentName(r.getToAgentName())
+                            .filename(r.getFilename())
+                            .fileSize(r.getFileSize())
+                            .averageSpeedMbps(r.getAverageSpeedMbps())
+                            .timestamp(r.getTimestamp() != null ? r.getTimestamp() : Instant.now())
+                            .build();
+                })
                 .toList();
 
         if (!toSave.isEmpty()) {
@@ -57,7 +64,7 @@ public class TransferLogService {
         TransferLog entry = TransferLog.builder()
                 .id(UUID.randomUUID())
                 .fromAgentId(fromAgentId)
-                .fromAgentName(fromAgentName)
+                .fromAgentName(resolveFromAgentName(fromAgentId, fromAgentName))
                 .toAgentId(UUID.fromString("00000000-0000-0000-0000-000000000000"))
                 .toAgentName("Nexus")
                 .filename(filename)
@@ -87,5 +94,24 @@ public class TransferLogService {
         Long totalSize = transferLogRepository.sumFileSize();
         long totalDataTransferred = totalSize != null ? totalSize : 0L;
         return new TransferStats(totalTransfers, totalDataTransferred);
+    }
+
+    /**
+     * Fills a missing source name from the agent table or local nexus name.
+     */
+    private String resolveFromAgentName(UUID fromAgentId, String provided) {
+        if (provided != null && !provided.isBlank()) {
+            return provided;
+        }
+        if (fromAgentId == null) {
+            return null;
+        }
+        UUID nexusId = nexusService.getNexusId();
+        if (nexusId != null && nexusId.equals(fromAgentId)) {
+            return nexusService.getNexusName();
+        }
+        return agentRepository.findById(fromAgentId)
+                .map(Agent::getName)
+                .orElse(null);
     }
 }

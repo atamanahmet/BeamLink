@@ -2,6 +2,7 @@ package com.atamanahmet.beamlink.nexus.controller;
 
 import com.atamanahmet.beamlink.nexus.dto.DispatchResultItem;
 import com.atamanahmet.beamlink.nexus.dto.InitiateSendRequest;
+import com.atamanahmet.beamlink.nexus.dto.SpeedLimitRequest;
 import com.atamanahmet.beamlink.nexus.dto.TransferSummary;
 import com.atamanahmet.beamlink.nexus.exception.FileTransferException;
 import com.atamanahmet.beamlink.nexus.service.TransferDispatchService;
@@ -11,7 +12,9 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 @RestController
@@ -71,6 +74,17 @@ public class TransferManagementController {
     @PostMapping("/single/{id}/resume")
     public ResponseEntity<Void> resumeSingle(@PathVariable UUID id) {
         return handleResume(() -> managementService.resumeSingle(id));
+    }
+
+    @PutMapping("/single/{id}/speed-limit")
+    public ResponseEntity<Map<String, Object>> setSingleSpeedLimit(
+            @PathVariable UUID id,
+            @RequestBody(required = false) SpeedLimitRequest body) {
+        Double limit = body == null ? null : body.getLimitMbps();
+        managementService.setSingleSpeedLimit(id, limit);
+        Map<String, Object> response = new HashMap<>();
+        response.put("limitMbps", limit);
+        return ResponseEntity.ok(response);
     }
 
     @DeleteMapping("/single/{id}")

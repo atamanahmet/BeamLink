@@ -3,6 +3,8 @@ package com.atamanahmet.beamlink.agent.service;
 import com.atamanahmet.beamlink.agent.domain.BatchTransfer;
 import com.atamanahmet.beamlink.agent.domain.DirectoryTransfer;
 import com.atamanahmet.beamlink.agent.domain.FileTransfer;
+import com.atamanahmet.beamlink.agent.domain.enums.PauseOwner;
+import com.atamanahmet.beamlink.agent.domain.enums.TransferStatus;
 import com.atamanahmet.beamlink.agent.dto.TransferSummary;
 import com.atamanahmet.beamlink.agent.exception.FileTransferException;
 import com.atamanahmet.beamlink.agent.mapper.TransferMapper;
@@ -25,6 +27,8 @@ public class TransferQueryService {
     private final BatchTransferRepository batchTransferRepository;
     private final DirectoryTransferRepository directoryTransferRepository;
     private final TransferMapper transferMapper;
+    private final AgentResumePolicyHolder resumePolicyHolder;
+    private final TransferSideResolver sideResolver;
 
     public List<TransferSummary> listAll() {
         List<TransferSummary> result = new ArrayList<>();
@@ -32,7 +36,7 @@ public class TransferQueryService {
         fileTransferRepository.findAllByOrderByCreatedAtDesc()
                 .stream()
                 .filter(ft -> ft.getBatchTransferId() == null && ft.getDirectoryTransferId() == null)
-                .map(transferMapper::fromSingle)
+                .map(this::mapSingle)
                 .forEach(result::add);
 
         batchTransferRepository.findAllByOrderByCreatedAtDesc()
@@ -50,7 +54,7 @@ public class TransferQueryService {
     }
 
     public TransferSummary getSingle(UUID id) {
-        return transferMapper.fromSingle(
+        return mapSingle(
                 fileTransferRepository.findByTransferId(id)
                         .orElseThrow(() -> new FileTransferException("Transfer not found: " + id, null))
         );
@@ -73,15 +77,19 @@ public class TransferQueryService {
     public List<TransferSummary> getBatchFiles(UUID batchId) {
         return fileTransferRepository.findByBatchTransferId(batchId)
                 .stream()
-                .map(transferMapper::fromSingle)
+                .map(this::mapSingle)
                 .toList();
     }
 
     public List<TransferSummary> getDirectoryFiles(UUID directoryId) {
         return fileTransferRepository.findByDirectoryTransferId(directoryId)
                 .stream()
-                .map(transferMapper::fromSingle)
+                .map(this::mapSingle)
                 .toList();
+    }
+
+    private TransferSummary mapSingle(FileTransfer ft) {
+        return transferMapper.fromSingle(ft, canResumeSingle(ft));
     }
 
     private TransferSummary mapBatch(BatchTransfer bt) {
@@ -94,7 +102,12 @@ public class TransferQueryService {
                 .map(FileTransfer::getFileName)
                 .orElse("batch");
 
-        return transferMapper.fromBatch(bt, confirmedBytes, firstName);
+        return transferMapper.fromBatch(bt, confirmedBytes, firstName, canResumeGroup(
+                bt.getStatus().name(),
+                bt.getPausedBy(),
+                bt.getSourceAgentId(),
+                bt.getTargetAgentId(),
+                bt.getTargetIp()));
     }
 
     private TransferSummary mapDirectory(DirectoryTransfer dt) {
@@ -104,6 +117,33 @@ public class TransferQueryService {
                 .mapToLong(FileTransfer::getConfirmedOffset)
                 .sum();
 
-        return transferMapper.fromDirectory(dt, confirmedBytes);
+        return transferMapper.fromDirectory(dt, confirmedBytes, canResumeGroup(
+                dt.getStatus().name(),
+                dt.getPausedBy(),
+                dt.getSourceAgentId(),
+                dt.getTargetAgentId(),
+                dt.getTargetIp()));
+    }
+
+    private boolean canResumeSingle(FileTransfer ft) {
+        if (ft.getStatus() != TransferStatus.PAUSED) {
+            return false;
+        }
+        PauseOwner side = sideResolver.resolve(
+                ft.getSourceAgentId(), ft.getTargetAgentId(), ft.getTargetIp());
+        return ResumePolicy.canResume(resumePolicyHolder.getMode(), side, ft.getPausedBy());
+    }
+
+    private boolean canResumeGroup(
+            String statusName,
+            PauseOwner pausedBy,
+            UUID sourceAgentId,
+            UUID targetAgentId,
+            String targetIp) {
+        if (!"PAUSED".equals(statusName)) {
+            return false;
+        }
+        PauseOwner side = sideResolver.resolve(sourceAgentId, targetAgentId, targetIp);
+        return ResumePolicy.canResume(resumePolicyHolder.getMode(), side, pausedBy);
     }
 }

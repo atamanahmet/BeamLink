@@ -53,6 +53,18 @@ public class GlobalExceptionHandler {
                 .body(response);
     }
 
+    @ExceptionHandler(TransferProtocolException.class)
+    public ResponseEntity<Map<String, Object>> handleTransferProtocolException(
+            TransferProtocolException e) {
+        Map<String, Object> response = new HashMap<>();
+        response.put("code", e.getCode());
+        response.put("message", e.getMessage());
+        if (e.getPausedBy() != null) {
+            response.put("pausedBy", e.getPausedBy().name());
+        }
+        return ResponseEntity.status(e.getStatus()).body(response);
+    }
+
     @ExceptionHandler(MaxUploadSizeExceededException.class)
     public ResponseEntity<Map<String, Object>> handleMaxUploadSizeExceeded(MaxUploadSizeExceededException e) {
 

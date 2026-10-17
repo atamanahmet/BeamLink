@@ -1,5 +1,6 @@
 package com.atamanahmet.beamlink.nexus.domain;
 
+import com.atamanahmet.beamlink.nexus.domain.enums.PauseOwner;
 import com.atamanahmet.beamlink.nexus.domain.enums.TransferStatus;
 import jakarta.persistence.*;
 import lombok.Getter;
@@ -71,6 +72,10 @@ public class FileTransfer {
     @Column(nullable = false)
     private TransferStatus status;
 
+    @Enumerated(EnumType.STRING)
+    @Column
+    private PauseOwner pausedBy;
+
     @Column(nullable = false)
     private int retryCount;
 
@@ -91,6 +96,9 @@ public class FileTransfer {
 
     @Column
     private String failureReason;
+
+    @Column
+    private Double speedLimitMbps;
 
     public static FileTransfer initiate(
             UUID transferId,

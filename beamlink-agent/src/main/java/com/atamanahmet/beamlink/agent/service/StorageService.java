@@ -1,7 +1,7 @@
 package com.atamanahmet.beamlink.agent.service;
 
 import com.atamanahmet.beamlink.agent.config.StorageConfig;
-import com.atamanahmet.beamlink.agent.constants.TransferConstants;
+import com.atamanahmet.beamlink.agent.config.TransferProperties;
 import com.atamanahmet.beamlink.agent.domain.FileTransfer;
 import com.atamanahmet.beamlink.agent.domain.Setting;
 import com.atamanahmet.beamlink.agent.domain.enums.SettingKey;
@@ -26,7 +26,7 @@ public class StorageService {
 
     private final StorageConfig storageConfig;
     private final SettingsService settingsService;
-    private static final int BUFFER_SIZE = TransferConstants.CHUNK_SIZE;
+    private final TransferProperties transferProperties;
     private static final long DISK_BUFFER_BYTES = 100L * 1024 * 1024;
 
 
@@ -100,7 +100,7 @@ public class StorageService {
     /** Writes chunk at offset, returns bytes written. */
     public long writeChunk(Path path, long offset, InputStream stream) {
         long bytesWritten = 0;
-        byte[] buffer = new byte[BUFFER_SIZE];
+        byte[] buffer = new byte[transferProperties.getChunkSizeBytes()];
 
         try (RandomAccessFile raf = new RandomAccessFile(path.toFile(), "rw")) {
             raf.seek(offset);
@@ -155,10 +155,10 @@ public class StorageService {
         Path finalPath = uploadsDir.resolve(filename);
 
         long bytesWritten = 0;
-        byte[] buffer = new byte[BUFFER_SIZE];
+        byte[] buffer = new byte[transferProperties.getChunkSizeBytes()];
 
         try (BufferedOutputStream out = new BufferedOutputStream(
-                new FileOutputStream(tmpPath.toFile()), BUFFER_SIZE)) {
+                new FileOutputStream(tmpPath.toFile()), transferProperties.getChunkSizeBytes())) {
             int bytesRead;
             while ((bytesRead = inputStream.read(buffer)) != -1) {
                 out.write(buffer, 0, bytesRead);

@@ -1,6 +1,7 @@
 package com.atamanahmet.beamlink.nexus.domain;
 
 import com.atamanahmet.beamlink.nexus.domain.enums.GroupTransferStatus;
+import com.atamanahmet.beamlink.nexus.domain.enums.PauseOwner;
 import jakarta.persistence.*;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
@@ -48,6 +49,9 @@ public class DirectoryTransfer {
         @Enumerated(EnumType.STRING)
         @Column(nullable = false)
         private GroupTransferStatus status;
+        @Enumerated(EnumType.STRING)
+        @Column
+        private PauseOwner pausedBy;
         @ElementCollection(fetch = FetchType.EAGER)
         @CollectionTable(name = "directory_transfer_empty_dirs", joinColumns = {
                         @JoinColumn(name = "directory_transfer_id") })

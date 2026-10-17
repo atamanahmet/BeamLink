@@ -50,6 +50,11 @@ agent:
   auto-resume-transfer: false
   auto-resume-group-transfers: false
 
+beamlink:
+  transfer:
+    chunk-size-bytes: 524288
+    window-size: 1
+
 logging:
   file:
     name: ${beamlink.runtime.dir}/logs/agent.log

@@ -19,6 +19,7 @@ public class TransferSummary {
     private long totalSize;
     private long confirmedBytes;
     private int totalFiles;
+    private UUID sourceAgentId;
     private UUID targetAgentId;
     private String targetIp;
     private Integer targetPort;
@@ -26,4 +27,8 @@ public class TransferSummary {
     private Instant completedAt;
     private String failureReason;
     private long activeTransferMs;
+    private String pausedBy;
+    private boolean canResume;
+    private Double speedLimitMbps;
+    private Double effectiveLimitMbps;
 }

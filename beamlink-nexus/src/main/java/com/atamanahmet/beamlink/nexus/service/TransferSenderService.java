@@ -29,8 +29,6 @@ import java.util.UUID;
 @RequiredArgsConstructor
 public class TransferSenderService {
 
-    private static final int CHUNK_SIZE = 8388608;
-
     private final FileTransferRepository transferRepository;
     private final NexusConfig nexusConfig;
     private final ObjectMapper objectMapper;
@@ -102,8 +100,9 @@ public class TransferSenderService {
             throw new FileTransferException("Source file no longer exists: " + cleanedPath, null);
         }
 
-        long targetOffset = transferHttpClient.queryConfirmedOffset(
-                transfer.getTargetIp(), transfer.getTargetPort(), transferId);
+        long targetOffset = transferHttpClient.resolveStartOffset(
+                transfer.getTargetIp(), transfer.getTargetPort(), transferId,
+                transfer.getConfirmedOffset());
 
         if (targetOffset != transfer.getConfirmedOffset()) {
             log.info("Correcting offset for {} from {} to {} (target state)",
@@ -111,6 +110,7 @@ public class TransferSenderService {
             transfer.setConfirmedOffset(targetOffset);
         }
 
+        transfer.setPausedBy(null);
         transfer.setStatus(TransferStatus.ACTIVE);
         transferRepository.save(transfer);
     }
@@ -161,6 +161,10 @@ public class TransferSenderService {
             transfer.setStatus(TransferStatus.FAILED);
             transfer.setFailureReason(reason);
             transferRepository.save(transfer);
+            if (transfer.getTargetIp() != null && transfer.getTargetPort() != null) {
+                transferHttpClient.notifyCancelToPeer(
+                        transfer.getTargetIp(), transfer.getTargetPort(), transferId);
+            }
         });
     }
 }
