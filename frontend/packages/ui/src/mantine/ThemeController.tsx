@@ -10,12 +10,12 @@ import {
   resolveFont,
   resolveFontId,
 } from "../theme/fonts.ts";
-import { generateTokens } from "../theme/generate.ts";
 import { loadThemes } from "../theme/loadThemes.ts";
-import type { ThemeSeeds } from "../theme/types.ts";
+import type { ThemeFile } from "../theme/types.ts";
 import { buildCssVariables, buildMantineTheme } from "./mantineTheme.ts";
 import {
   buildBackgroundCache,
+  composeThemeTokens,
   resolveThemeSeeds,
   resolveThemeSettings,
   sanitizePrimarySeed,
@@ -35,7 +35,7 @@ type ThemeWindowColors = {
 };
 
 /**
- * Reads the spike theme JSON from localStorage, or null on failure.
+ * Reads the theme JSON from localStorage, or null on failure.
  */
 function readThemeStorage(): string | null {
   try {
@@ -93,20 +93,22 @@ function applyFontVariables(fontId: string): void {
  * Pushes active page background and text color through onThemeApplied.
  */
 function WindowThemeSync({
-  seeds,
+  themes,
+  settings,
   onThemeApplied,
 }: {
-  seeds: ThemeSeeds;
+  themes: ThemeFile[];
+  settings: ThemeSettings;
   onThemeApplied?: (colors: ThemeWindowColors) => void;
 }) {
   const colorScheme = useComputedColorScheme("dark");
   useEffect(() => {
-    const tokens = generateTokens(seeds, colorScheme);
+    const tokens = composeThemeTokens(themes, settings, colorScheme);
     onThemeApplied?.({
       background: tokens.background,
       foreground: tokens["text-primary"],
     });
-  }, [seeds, colorScheme, onThemeApplied]);
+  }, [themes, settings, colorScheme, onThemeApplied]);
   return null;
 }
 
@@ -180,7 +182,11 @@ export function ThemeController({
         cssVariablesResolver={cssVariablesResolver}
         defaultColorScheme="auto"
       >
-        <WindowThemeSync seeds={seeds} onThemeApplied={onThemeApplied} />
+        <WindowThemeSync
+          themes={themes}
+          settings={settings}
+          onThemeApplied={onThemeApplied}
+        />
         {children}
       </MantineProvider>
     </ThemeSettingsContext.Provider>

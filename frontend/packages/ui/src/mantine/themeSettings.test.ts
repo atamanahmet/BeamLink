@@ -4,6 +4,7 @@ import { generateTokens } from "../theme/generate.ts";
 import { loadThemes } from "../theme/loadThemes.ts";
 import {
   buildBackgroundCache,
+  composeThemeTokens,
   resolveThemeSettings,
   sanitizePrimarySeed,
   serializeBackgroundCache,
@@ -94,5 +95,15 @@ describe("buildBackgroundCache", () => {
     expect(parsed.light).toMatch(HEX);
     expect(parsed.dark).toMatch(HEX);
     expect(Object.keys(parsed).sort()).toEqual(["dark", "light"]);
+  });
+});
+
+describe("composeThemeTokens", () => {
+  test("matches generateTokens for beam light", () => {
+    const composed = composeThemeTokens(themes, { themeId: "beam" }, "light");
+    const direct = generateTokens(beam.seeds, "light");
+    expect(composed.background).toBe(direct.background);
+    expect(composed["text-primary"]).toBe(direct["text-primary"]);
+    expect(composed.primary).toBe(direct.primary);
   });
 });

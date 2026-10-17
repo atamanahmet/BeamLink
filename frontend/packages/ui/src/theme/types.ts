@@ -17,6 +17,7 @@ export type ThemeMode = "light" | "dark";
 export type ThemeTokens = {
   background: string;
   surface: string;
+  glass: string;
   "surface-raised": string;
   "text-primary": string;
   "text-secondary": string;

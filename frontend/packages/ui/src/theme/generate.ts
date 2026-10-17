@@ -147,6 +147,7 @@ export function generateTokens(
       ? {
           background: neutralTone(hue, 0.985),
           surface: neutralTone(hue, 0.965),
+          glass: neutralTone(hue, 0.965),
           "surface-raised": neutralTone(hue, 0.99),
           "text-primary": neutralTone(hue, 0.22),
           "text-secondary": neutralTone(hue, 0.4),
@@ -158,6 +159,7 @@ export function generateTokens(
       : {
           background: neutralTone(hue, 0.18),
           surface: neutralTone(hue, 0.22),
+          glass: neutralTone(hue, 0.22),
           "surface-raised": neutralTone(hue, 0.26),
           "text-primary": neutralTone(hue, 0.95),
           "text-secondary": neutralTone(hue, 0.78),

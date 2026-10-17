@@ -1,7 +1,7 @@
 import { parse } from "culori";
 import { DEFAULT_FONT_ID, resolveFontId } from "../theme/fonts.ts";
 import { generateTokens } from "../theme/generate.ts";
-import type { ThemeFile, ThemeSeeds } from "../theme/types.ts";
+import type { ThemeFile, ThemeMode, ThemeSeeds, ThemeTokens } from "../theme/types.ts";
 
 export const THEME_STORAGE_KEY = "beamlink-theme";
 export const THEME_BG_STORAGE_KEY = "beamlink-theme-bg";
@@ -115,4 +115,19 @@ export function resolveThemeSeeds(
     return theme.seeds;
   }
   return { ...theme.seeds, primary: settings.primarySeed };
+}
+
+/**
+ * Single path from theme settings to resolved color tokens.
+ */
+export function composeThemeTokens(
+  themes: ThemeFile[],
+  settings: Pick<ThemeSettings, "themeId" | "primarySeed">,
+  colorScheme: ThemeMode,
+): ThemeTokens {
+  const tokens = generateTokens(
+    resolveThemeSeeds(themes, settings),
+    colorScheme,
+  );
+  return { ...tokens, glass: tokens.surface };
 }

@@ -30,6 +30,7 @@ export { ThemeController } from "./mantine/ThemeController.tsx";
 export { buildCssVariables, buildMantineTheme } from "./mantine/mantineTheme.ts";
 export {
   buildBackgroundCache,
+  composeThemeTokens,
   DEFAULT_THEME_ID,
   resolveThemeSeeds,
   resolveThemeSettings,
@@ -40,8 +41,20 @@ export {
   type ThemeBackgroundCache,
   type ThemeSettings,
 } from "./mantine/themeSettings.ts";
+export { useThemeTokens } from "./mantine/useThemeTokens.ts";
 export {
   ThemeSettingsContext,
   useThemeSettings,
   type ThemeSettingsContextValue,
 } from "./mantine/themeSettingsContext.tsx";
+export {
+  AppFrame,
+  type AppFrameNavItem,
+  type AppFrameProps,
+} from "./shell/AppFrame.tsx";
+export { AuthCard, type AuthCardProps } from "./shell/AuthCard.tsx";
+export { RouteErrorScreen } from "./shell/RouteErrorScreen.tsx";
+export { GLASS_SURFACE_ALPHA, glassSurfaceStyle } from "./shell/glass.ts";
+export { blendGlassOverWarp } from "./shell/blendGlassOverWarp.ts";
+
+export { WarpBackground } from "./effects/WarpBackground.tsx";
