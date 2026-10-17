@@ -63,8 +63,16 @@ public class AgentWebSocketHandler implements WebSocketHandler {
         UUID agentId = extractAgentId(session);
         if (agentId == null) return;
 
-        sessions.remove(agentId);
+        WebSocketSession registered = sessions.get(agentId);
+        if (!WsSessionIdentity.isRegisteredSession(registered, session)) {
+            log.debug("Ignoring stale WS close for agent {}", agentId);
+            return;
+        }
+        if (!sessions.remove(agentId, session)) {
+            return;
+        }
         agentSessionService.markOffline(agentId);
+        broadcastAgentOffline(agentId);
         log.info("Agent {} WS disconnected: {}", agentId, closeStatus);
     }
 
