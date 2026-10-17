@@ -1,11 +1,12 @@
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
+import { RouterProvider } from "react-router/dom";
 import {
   createElectronPlatform,
   PlatformProvider,
 } from "@beamlink/platform";
 import "./index.css";
-import App from "./App.tsx";
+import { router } from "./router.tsx";
 import { ThemeWithPlatform } from "./components/ThemeWithPlatform.tsx";
 
 /**
@@ -17,7 +18,7 @@ async function bootstrap() {
     <StrictMode>
       <PlatformProvider platform={platform}>
         <ThemeWithPlatform>
-          <App />
+          <RouterProvider router={router} />
         </ThemeWithPlatform>
       </PlatformProvider>
     </StrictMode>,

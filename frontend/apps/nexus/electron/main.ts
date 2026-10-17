@@ -214,6 +214,8 @@ function createWindow() {
     show: false,
     width: 1280,
     height: 800,
+    minWidth: 900,
+    minHeight: 600,
     icon: getIconPath(),
     backgroundColor: theme.background,
     titleBarStyle: "hidden",

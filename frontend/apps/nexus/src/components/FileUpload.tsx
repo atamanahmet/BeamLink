@@ -1,22 +1,46 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useRef } from "react";
+import { Alert, Stack, Title } from "@mantine/core";
+import axios from "axios";
 import { usePlatform } from "@beamlink/platform";
-import { useAuth } from "../context/AuthContext";
-import { useAgent, type Peer } from "../context/AgentContext";
-import { useTransfer } from "../context/TransferContext";
-import { FileBrowserModal } from "./FileBrowserModal";
+import {
+  DropZone,
+  FileBrowserModal,
+  PeerSelect,
+  getDropStatus,
+  type PeerOption,
+  usePeersQuery,
+} from "@beamlink/features";
+import { transferApi, peersApi } from "../api/transferApi";
+import { useAuthStore } from "../store/authStore";
 
 interface FileUploadProps {
   onTransferStarted: () => void;
 }
 
+/**
+ * Reads a dispatch error message from axios or Error.
+ */
+function dispatchErrorMessage(err: unknown): string {
+  if (axios.isAxiosError(err)) {
+    const data = err.response?.data;
+    if (data && typeof data === "object" && "message" in data) {
+      const message = data.message;
+      if (typeof message === "string" && message.length > 0) return message;
+    }
+    if (err.message) return err.message;
+  }
+  if (err instanceof Error && err.message) return err.message;
+  return "Dispatch failed.";
+}
+
 export const FileUpload = ({ onTransferStarted }: FileUploadProps) => {
   const platform = usePlatform();
-  const { isAuthenticated } = useAuth();
-  const { getPeers } = useAgent();
-  const { initiateDispatch } = useTransfer();
+  const isAuthenticated = useAuthStore((s) => s.status === "authenticated");
+  const { data: peers = [] } = usePeersQuery(peersApi, {
+    enabled: isAuthenticated,
+  });
 
   const [showBrowser, setShowBrowser] = useState(false);
-  const [peers, setPeers] = useState<Peer[]>([]);
   const [selectedPeer, setSelectedPeer] = useState(
     () => localStorage.getItem("lastSelectedPeer") ?? "",
   );
@@ -26,29 +50,12 @@ export const FileUpload = ({ onTransferStarted }: FileUploadProps) => {
   const dragCounter = useRef(0);
 
   const selectedPeerObject = peers.find((p) => p.id === selectedPeer);
+  const isOffline = !!selectedPeerObject && !selectedPeerObject.online;
 
   const handlePeerSelect = (id: string) => {
     localStorage.setItem("lastSelectedPeer", id);
     setSelectedPeer(id);
   };
-
-  const isOffline = !!selectedPeerObject && !selectedPeerObject.online;
-
-  const loadPeers = async () => {
-    try {
-      const data = await getPeers();
-      setPeers(data);
-    } catch {
-      setPeers([]);
-    }
-  };
-
-  useEffect(() => {
-    if (!isAuthenticated) return;
-    loadPeers();
-    const interval = setInterval(loadPeers, 5000);
-    return () => clearInterval(interval);
-  }, [isAuthenticated]);
 
   const dispatch = async (paths: string[]) => {
     if (!selectedPeer) {
@@ -70,7 +77,7 @@ export const FileUpload = ({ onTransferStarted }: FileUploadProps) => {
     setMessage("");
 
     try {
-      const results = await initiateDispatch({
+      const results = await transferApi.initiateDispatch({
         paths: validPaths,
         targetAgentId: peer.id,
         targetIp: peer.ipAddress,
@@ -82,10 +89,8 @@ export const FileUpload = ({ onTransferStarted }: FileUploadProps) => {
       } else {
         setMessage("Nothing was initiated. Check the selected paths.");
       }
-    } catch (err: any) {
-      const msg =
-        err.response?.data?.message || err.message || "Dispatch failed.";
-      setMessage(`Failed: ${msg}`);
+    } catch (err: unknown) {
+      setMessage(`Failed: ${dispatchErrorMessage(err)}`);
     } finally {
       setIsSending(false);
     }
@@ -123,104 +128,48 @@ export const FileUpload = ({ onTransferStarted }: FileUploadProps) => {
     }
   };
 
-  const canInteract = !isSending && !!selectedPeer && !isOffline;
+  const status = getDropStatus({
+    isSending,
+    hasPeer: !!selectedPeer,
+    isOffline,
+    isDragging,
+  });
+  const peerOptions: PeerOption[] = peers.map((p) => ({
+    agentId: p.id,
+    agentName: p.agentName,
+    ipAddress: p.ipAddress,
+    port: p.port,
+    online: p.online,
+  }));
 
   return (
-    <div className="flex flex-col items-center w-full">
-      <div className="bg-black/70 backdrop-blur-xl border border-orange-500/20 shadow-[0_0_40px_rgba(255,120,0,0.15)] rounded-2xl p-8 max-w-5xl w-full">
-        <div className="text-center mb-8">
-          <h1 className="text-4xl font-bold text-orange-400 tracking-wide">
-            Send to Network
-          </h1>
-        </div>
+    <Stack gap="lg" w="100%" maw={900} mx="auto">
+      <Title order={2} c="var(--bl-text-primary)">
+        Send to Network
+      </Title>
 
-        <div className="mb-8">
-          <label className="block text-orange-300 text-sm mb-2 font-medium">
-            Destination Agent
-          </label>
-          <select
-            value={selectedPeer}
-            onChange={(e) => handlePeerSelect(e.target.value)}
-            disabled={isSending}
-            className="w-full bg-black/60 border border-orange-800 rounded-lg px-4 py-3
-                       text-orange-100 focus:outline-none focus:border-orange-500
-                       focus:ring-2 focus:ring-orange-500/20 transition-all disabled:opacity-50"
-          >
-            <option value="">Choose destination agent...</option>
-            {peers.map((peer) => (
-              <option key={peer.id} value={peer.id}>
-                {peer.agentName} ({peer.ipAddress}:{peer.port}) -{" "}
-                {peer.online ? "Online" : "Offline"}
-              </option>
-            ))}
-          </select>
-          {peers.length === 0 && (
-            <p className="text-orange-300/60 text-sm mt-2">
-              No agents registered.
-            </p>
-          )}
-          {isOffline && (
-            <p className="text-red-400 text-sm mt-2">This agent is offline.</p>
-          )}
-        </div>
+      <PeerSelect
+        options={peerOptions}
+        value={selectedPeer}
+        onChange={handlePeerSelect}
+        disabled={isSending}
+        isOffline={isOffline}
+      />
 
-        <div
-          onDragEnter={handleDragEnter}
-          onDragLeave={handleDragLeave}
-          onDragOver={handleDragOver}
-          onDrop={canInteract ? handleDrop : undefined}
-          className={`relative border-2 border-dashed rounded-xl flex flex-col
-                      justify-center items-center gap-6 p-12 text-center min-h-[45vh]
-                      transition-all
-                      ${isDragging && canInteract ? "border-orange-400 bg-orange-950/40 scale-[1.01]" : "border-orange-800"}
-                      ${!canInteract ? "opacity-50 cursor-not-allowed" : "cursor-pointer"}`}
-        >
-          <svg
-            className={`h-16 w-16 transition-colors ${isDragging && canInteract ? "text-orange-400" : "text-orange-700"}`}
-            fill="none"
-            viewBox="0 0 24 24"
-            stroke="currentColor"
-          >
-            <path
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              strokeWidth={2}
-              d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"
-            />
-          </svg>
+      <DropZone
+        status={status}
+        onDragEnter={handleDragEnter}
+        onDragLeave={handleDragLeave}
+        onDragOver={handleDragOver}
+        onDrop={handleDrop}
+        onChooseFiles={() => setShowBrowser(true)}
+      />
 
-          <p className="text-orange-400 text-lg">
-            {isSending
-              ? "Initiating transfer..."
-              : !selectedPeer
-                ? "Select a destination agent above"
-                : isOffline
-                  ? "Selected agent is offline"
-                  : isDragging
-                    ? "Drop to send"
-                    : "Drag files or folders here"}
-          </p>
-
-          {canInteract && !isSending && (
-            <button
-              onClick={() => setShowBrowser(true)}
-              className="px-6 py-2.5 bg-orange-800 hover:bg-orange-700 text-white rounded-lg transition-all font-medium"
-            >
-              Choose Files
-            </button>
-          )}
-
-          {isSending && (
-            <div className="w-8 h-8 border-2 border-orange-400 border-t-transparent rounded-full animate-spin" />
-          )}
-        </div>
-
-        {message && (
-          <div className="mt-6 p-4 rounded-lg border bg-red-900/50 border-red-600">
-            <p className="text-sm text-gray-200">{message}</p>
-          </div>
-        )}
-      </div>
+      {message ? (
+        <Alert color="danger" variant="light">
+          {message}
+        </Alert>
+      ) : null}
 
       <FileBrowserModal
         isOpen={showBrowser}
@@ -230,6 +179,6 @@ export const FileUpload = ({ onTransferStarted }: FileUploadProps) => {
           await dispatch(paths);
         }}
       />
-    </div>
+    </Stack>
   );
 };

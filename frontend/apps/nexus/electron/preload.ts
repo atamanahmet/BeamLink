@@ -1,4 +1,4 @@
-import { contextBridge, ipcRenderer } from "electron";
+import { contextBridge, ipcRenderer, webUtils } from "electron";
 import path from "path";
 import fs from "fs";
 import os from "os";
@@ -8,7 +8,6 @@ contextBridge.exposeInMainWorld("electronAPI", {
     ipcRenderer.invoke("select-files-and-directories"),
 
   getPathForFiles: (files: File[]) => {
-    const { webUtils } = require("electron");
     return files.map((f) => webUtils.getPathForFile(f)).filter(Boolean);
   },
 

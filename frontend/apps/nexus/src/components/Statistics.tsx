@@ -1,4 +1,6 @@
 import { Users, Wifi, WifiOff, Clock, Activity, HardDrive } from "lucide-react";
+import { Paper, SimpleGrid, Stack, Text } from "@mantine/core";
+import { formatBytes } from "@beamlink/features";
 
 interface StatisticsProps {
   stats: {
@@ -17,14 +19,6 @@ interface StatisticsProps {
 }
 
 export const Statistics = ({ stats }: StatisticsProps) => {
-  const formatBytes = (bytes: number) => {
-    if (bytes === 0) return "0 B";
-    const k = 1024;
-    const sizes = ["B", "KB", "MB", "GB", "TB"];
-    const i = Math.floor(Math.log(bytes) / Math.log(k));
-    return Math.round((bytes / Math.pow(k, i)) * 100) / 100 + " " + sizes[i];
-  };
-
   const statCards = [
     {
       icon: Users,
@@ -65,29 +59,23 @@ export const Statistics = ({ stats }: StatisticsProps) => {
   ];
 
   return (
-    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4 mb-8">
+    <SimpleGrid cols={{ base: 1, sm: 2, md: 3, xl: 6 }} spacing="md" mb="xl">
       {statCards.map((stat, index) => {
         const Icon = stat.icon;
         return (
-          <div
-            key={index}
-            className="bg-black/70 backdrop-blur-xl border border-orange-500/20
-                       shadow-[0_0_20px_rgba(255,120,0,0.1)]
-                       rounded-xl p-4 hover:shadow-[0_0_30px_rgba(255,120,0,0.2)]
-                       transition-all"
-          >
-            <div className="flex items-center justify-between mb-2">
-              <div className={`p-2 rounded-lg bg-${stat.color}-500/10`}>
-                <Icon className={`w-5 h-5 text-${stat.color}-400`} />
-              </div>
-            </div>
-            <p className="text-orange-300/60 text-xs mb-1">{stat.label}</p>
-            <p className="text-2xl font-bold text-orange-400">
-              {stat.value || 0}
-            </p>
-          </div>
+          <Paper key={index} withBorder p="md" radius="md">
+            <Stack gap="xs">
+              <Icon size={20} color="var(--bl-primary)" />
+              <Text size="xs" c="var(--bl-text-secondary)">
+                {stat.label}
+              </Text>
+              <Text size="xl" fw={700} c="var(--bl-primary-text)">
+                {stat.value || 0}
+              </Text>
+            </Stack>
+          </Paper>
         );
       })}
-    </div>
+    </SimpleGrid>
   );
 };

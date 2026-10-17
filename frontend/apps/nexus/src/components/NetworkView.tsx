@@ -1,18 +1,20 @@
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { Activity, Users, Clock } from "lucide-react";
+import { Badge, Paper, Stack, Tabs, Text, Title } from "@mantine/core";
 import { AgentList } from "./AgentList";
 import { PendingApprovals } from "./PendingApprovals";
 import { Statistics } from "./Statistics";
 import { TransferLogs } from "./TransferLogs";
-import { useAgent } from "../context/AgentContext";
+import { useNexusStatsQuery } from "../hooks/useNexusAdmin";
 
 export const NetworkView = () => {
-  const { getStats } = useAgent();
+  const { data: stats } = useNexusStatsQuery();
 
   const [activeTab, setActiveTab] = useState<"agents" | "pending" | "logs">(
     "agents",
   );
-  const [stats, setStats] = useState({
+
+  const resolvedStats = stats ?? {
     agentStats: {
       total: 0,
       online: 0,
@@ -24,104 +26,88 @@ export const NetworkView = () => {
       totalTransfers: 0,
       totalDataTransferred: 0,
     },
-  });
+  };
 
-  useEffect(() => {
-    const loadStats = async () => {
-      try {
-        const data = await getStats();
-        setStats(data);
-      } catch (err) {
-        console.error("Failed to load stats:", err);
-      }
-    };
+  /**
+   * Maps Mantine tab value (string or null) onto activeTab.
+   */
+  const handleTabChange = (value: string | null) => {
+    if (value === "agents" || value === "pending" || value === "logs") {
+      setActiveTab(value);
+    }
+  };
 
-    loadStats();
-    const interval = setInterval(loadStats, 5000); // refresh every 5s
-    return () => clearInterval(interval);
-  }, [getStats]);
+  const pendingCount =
+    resolvedStats.agentStats.pending + resolvedStats.agentStats.pendingRename;
 
   return (
-    <div>
-      <div className="max-w-7xl mx-auto">
-        {/* Header */}
-        <div className="flex justify-between items-center mb-8">
-          <div>
-            <h1 className="text-4xl font-bold text-orange-400 tracking-wide mb-2">
-              Nexus
-            </h1>
-            <p className="text-orange-300/60">Central Command & Control</p>
-          </div>
-        </div>
+    <Stack gap="xl" maw={1280} mx="auto" w="100%">
+      <Stack gap={4}>
+        <Title order={1} c="var(--bl-primary-text)">
+          Nexus
+        </Title>
+        <Text c="var(--bl-text-secondary)">Central Command & Control</Text>
+      </Stack>
 
-        {/* Statistics */}
-        <Statistics stats={stats} />
+      <Statistics stats={resolvedStats} />
 
-        {/* Tabs */}
-        <div
-          className="bg-black/70 backdrop-blur-xl border border-orange-500/20
-                        shadow-[0_0_40px_rgba(255,120,0,0.15)]
-                        rounded-2xl overflow-hidden"
-        >
-          {/* Tab Headers */}
-          <div className="flex border-b border-orange-800/30">
-            <button
-              onClick={() => setActiveTab("agents")}
-              className={`flex-1 px-6 py-4 flex items-center justify-center gap-2 transition-all
-                ${
-                  activeTab === "agents"
-                    ? "bg-orange-500/10 text-orange-400 border-b-2 border-orange-400"
-                    : "text-orange-300/60 hover:text-orange-300 hover:bg-orange-500/5"
-                }`}
+      <Paper
+        withBorder
+        radius="lg"
+        style={{
+          backgroundColor: "var(--bl-surface)",
+          borderColor: "var(--bl-border)",
+          overflow: "hidden",
+        }}
+      >
+        <Tabs value={activeTab} onChange={handleTabChange}>
+          <Tabs.List grow>
+            <Tabs.Tab
+              value="agents"
+              leftSection={<Users size={20} />}
+              c="var(--bl-primary-text)"
             >
-              <Users className="w-5 h-5" />
               Agents
-            </button>
+            </Tabs.Tab>
 
-            <button
-              onClick={() => setActiveTab("pending")}
-              className={`flex-1 px-6 py-4 flex items-center justify-center gap-2 transition-all relative
-                ${
-                  activeTab === "pending"
-                    ? "bg-orange-500/10 text-orange-400 border-b-2 border-orange-400"
-                    : "text-orange-300/60 hover:text-orange-300 hover:bg-orange-500/5"
-                }`}
+            <Tabs.Tab
+              value="pending"
+              leftSection={<Clock size={20} />}
+              c="var(--bl-primary-text)"
+              rightSection={
+                pendingCount > 0 ? (
+                  <Badge
+                    size="sm"
+                    circle
+                    style={{
+                      backgroundColor: "var(--bl-primary)",
+                      color: "var(--bl-primary-foreground)",
+                    }}
+                  >
+                    {pendingCount}
+                  </Badge>
+                ) : undefined
+              }
             >
-              <Clock className="w-5 h-5" />
               Pending Approvals
-              {stats.agentStats.pending + stats.agentStats.pendingRename >
-                0 && (
-                <span
-                  className="absolute top-2 right-2 bg-orange-500 text-black text-xs
-                                 px-2 py-0.5 rounded-full font-bold"
-                >
-                  {stats.agentStats.pending + stats.agentStats.pendingRename}
-                </span>
-              )}
-            </button>
+            </Tabs.Tab>
 
-            <button
-              onClick={() => setActiveTab("logs")}
-              className={`flex-1 px-6 py-4 flex items-center justify-center gap-2 transition-all
-                ${
-                  activeTab === "logs"
-                    ? "bg-orange-500/10 text-orange-400 border-b-2 border-orange-400"
-                    : "text-orange-300/60 hover:text-orange-300 hover:bg-orange-500/5"
-                }`}
+            <Tabs.Tab
+              value="logs"
+              leftSection={<Activity size={20} />}
+              c="var(--bl-primary-text)"
             >
-              <Activity className="w-5 h-5" />
               Transfer Logs
-            </button>
-          </div>
+            </Tabs.Tab>
+          </Tabs.List>
+        </Tabs>
 
-          {/* Tab Content */}
-          <div className="p-6">
-            {activeTab === "agents" && <AgentList />}
-            {activeTab === "pending" && <PendingApprovals />}
-            {activeTab === "logs" && <TransferLogs />}
-          </div>
-        </div>
-      </div>
-    </div>
+        <Stack p="md" gap="md">
+          {activeTab === "agents" && <AgentList />}
+          {activeTab === "pending" && <PendingApprovals />}
+          {activeTab === "logs" && <TransferLogs />}
+        </Stack>
+      </Paper>
+    </Stack>
   );
 };
