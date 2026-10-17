@@ -1,7 +1,0 @@
-@layer theme, base, mantine, components, utilities;
-
-@import "tailwindcss/theme.css" layer(theme);
-@import "tailwindcss/utilities.css" layer(utilities);
-
-@import "@mantine/core/styles.layer.css";
-@import "@mantine/dropzone/styles.layer.css";
