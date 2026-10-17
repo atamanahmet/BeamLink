@@ -2,6 +2,7 @@ package com.atamanahmet.beamlink.agent.mapper;
 
 import com.atamanahmet.beamlink.agent.domain.Peer;
 import com.atamanahmet.beamlink.agent.dto.PeerDTO;
+import com.atamanahmet.beamlink.agent.dto.PeerSummaryResponse;
 
 public final class PeerMapper {
 
@@ -31,5 +32,17 @@ public final class PeerMapper {
                 .online(entity.isOnline())
                 .publicId(entity.getPublicId())
                 .build();
+    }
+
+    /**
+     * Maps entity to REST peer summary. id comes from agentId.
+     */
+    public static PeerSummaryResponse toSummary(Peer entity) {
+        return new PeerSummaryResponse(
+                entity.getAgentId(),
+                entity.getAgentName(),
+                entity.getIpAddress(),
+                entity.getPort(),
+                entity.isOnline());
     }
 }
