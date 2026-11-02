@@ -20,7 +20,6 @@ class BeamlinkNexusApplicationTests {
             runtimeDir = Files.createTempDirectory("beamlink-nexus-test-");
             Files.createDirectories(runtimeDir.resolve("data/database"));
             Files.createDirectories(runtimeDir.resolve("data/uploads"));
-            Files.createDirectories(runtimeDir.resolve("data/temp"));
             Files.createDirectories(runtimeDir.resolve("logs"));
             dbFile = runtimeDir.resolve("data/database/nexus-test.db");
             System.setProperty("beamlink.runtime.dir", runtimeDir.toAbsolutePath().toString());
@@ -36,6 +35,7 @@ class BeamlinkNexusApplicationTests {
                 "spring.datasource.url",
                 () -> "jdbc:sqlite:" + dbFile.toAbsolutePath()
                         + "?journal_mode=WAL&busy_timeout=3000&foreign_keys=on");
+        registry.add("nexus.tls.port", () -> 17474);
     }
 
     @Test

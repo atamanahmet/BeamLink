@@ -9,11 +9,12 @@ import java.util.UUID;
 @Builder
 public class PeerDTO {
     private UUID id;
-    private String agentName;
+    private String deviceName;
     private String ipAddress;
     private int port;
     private boolean online;
     private UUID publicId;
-    private String publicToken;
     private long lastSeen;
+    private Integer tlsPort;
+    private String tlsFingerprint;
 }

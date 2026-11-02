@@ -9,4 +9,5 @@ import java.util.UUID;
 @AllArgsConstructor
 public class InitiateBatchTransferResponse {
     private UUID batchTransferId;
+    private int skippedCount;
 }

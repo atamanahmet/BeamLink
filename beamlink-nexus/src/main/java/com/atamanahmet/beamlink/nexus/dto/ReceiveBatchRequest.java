@@ -14,7 +14,7 @@ public class ReceiveBatchRequest {
 
     private UUID batchTransferId;
     private UUID dispatchId;
-    private UUID sourceAgentId;
+    private UUID sourceDeviceId;
     private int totalFiles;
     private long totalSize;
     private List<FileEntry> files;
@@ -25,6 +25,6 @@ public class ReceiveBatchRequest {
     public static class FileEntry {
         private UUID transferId;
         private String fileName;
-        private long fileSize;
+        private Long fileSize;
     }
 }

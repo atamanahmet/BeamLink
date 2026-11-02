@@ -13,7 +13,7 @@ public class InitiateDirectoryTransferRequest {
 
     private String sourcePath;
     private UUID dispatchId;
-    private UUID targetAgentId;
+    private UUID targetDeviceId;
     private String targetIp;
     private int targetPort;
 }

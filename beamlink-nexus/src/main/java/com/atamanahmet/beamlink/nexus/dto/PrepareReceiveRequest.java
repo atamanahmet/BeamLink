@@ -11,9 +11,9 @@ import java.util.UUID;
 @NoArgsConstructor
 public class PrepareReceiveRequest {
     private UUID transferId;
-    private UUID sourceAgentId;
+    private UUID sourceDeviceId;
     private String sourceIp;
     private Integer sourcePort;
     private String fileName;
-    private long fileSize;
+    private Long fileSize;
 }

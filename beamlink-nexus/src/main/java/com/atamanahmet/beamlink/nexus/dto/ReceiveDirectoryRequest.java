@@ -14,7 +14,7 @@ public class ReceiveDirectoryRequest {
 
     private UUID directoryTransferId;
     private UUID dispatchId;
-    private UUID sourceAgentId;
+    private UUID sourceDeviceId;
     private String directoryName;
     private int totalFiles;
     private long totalSize;
@@ -28,6 +28,6 @@ public class ReceiveDirectoryRequest {
         private UUID transferId;
         private String fileName;
         private String relativePath;
-        private long fileSize;
+        private Long fileSize;
     }
 }

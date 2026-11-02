@@ -14,7 +14,7 @@ public class InitiateBatchTransferRequest {
 
     private List<String> filePaths;
     private UUID dispatchId;
-    private UUID targetAgentId;
+    private UUID targetDeviceId;
     private String targetIp;
     private int targetPort;
 }

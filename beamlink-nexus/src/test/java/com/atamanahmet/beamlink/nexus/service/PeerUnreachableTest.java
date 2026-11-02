@@ -5,6 +5,7 @@ import org.junit.jupiter.api.Test;
 
 import java.net.ConnectException;
 import java.net.UnknownHostException;
+import java.net.http.HttpConnectTimeoutException;
 import java.net.http.HttpTimeoutException;
 import java.nio.channels.ClosedChannelException;
 import java.nio.channels.UnresolvedAddressException;
@@ -18,6 +19,7 @@ class PeerUnreachableTest {
         assertThat(PeerUnreachable.isPeerUnreachable(new ConnectException())).isTrue();
         assertThat(PeerUnreachable.isPeerUnreachable(new UnknownHostException())).isTrue();
         assertThat(PeerUnreachable.isPeerUnreachable(new HttpTimeoutException("t"))).isTrue();
+        assertThat(PeerUnreachable.isPeerUnreachable(new HttpConnectTimeoutException("connect"))).isTrue();
         assertThat(PeerUnreachable.isPeerUnreachable(new ClosedChannelException())).isTrue();
         assertThat(PeerUnreachable.isPeerUnreachable(new UnresolvedAddressException())).isTrue();
 

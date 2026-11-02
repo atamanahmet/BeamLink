@@ -1,8 +1,7 @@
 package com.atamanahmet.beamlink.nexus.config;
 
-import com.atamanahmet.beamlink.nexus.domain.Setting;
 import com.atamanahmet.beamlink.nexus.domain.enums.SettingKey;
-import com.atamanahmet.beamlink.nexus.repository.SettingsRepository;
+import com.atamanahmet.beamlink.nexus.service.SettingsService;
 import jakarta.annotation.PostConstruct;
 import lombok.Getter;
 import lombok.RequiredArgsConstructor;
@@ -16,7 +15,6 @@ import java.security.interfaces.RSAPrivateKey;
 import java.security.interfaces.RSAPublicKey;
 import java.security.spec.PKCS8EncodedKeySpec;
 import java.security.spec.X509EncodedKeySpec;
-import java.time.Instant;
 import java.util.Base64;
 import java.util.Optional;
 
@@ -25,7 +23,7 @@ import java.util.Optional;
  * 1. Both keys must exist in DB together, partial state is invalid, regenerate
  * 2. If missing, generate 2048-bit RSA pair and persist both
  * 3. Private key never leaves this class over the network
- * 4. Public key is exposed via getPublicKeyBase64() for agent distribution
+ * 4. Public key is exposed via getPublicKeyBase64() for device distribution
  */
 @Slf4j
 @Component
@@ -33,7 +31,7 @@ import java.util.Optional;
 @RequiredArgsConstructor
 public class RsaKeyConfig {
 
-    private final SettingsRepository settingsRepository;
+    private final SettingsService settingsService;
 
     private RSAPrivateKey privateKey;
     private RSAPublicKey publicKey;
@@ -42,17 +40,17 @@ public class RsaKeyConfig {
     /**
      * Resolves public and private RSA, Both must exist.
      * If one is missing (corrupted state), regenerate both.
-     * Agents will need to re-register if keys are regenerated
+     * Devices will need to re-register if keys are regenerated
      */
     @PostConstruct
     public void resolve() {
 
-        Optional<Setting> privateSetting = settingsRepository.findByKey(SettingKey.RSA_PRIVATE_KEY);
-        Optional<Setting> publicSetting  = settingsRepository.findByKey(SettingKey.RSA_PUBLIC_KEY);
+        Optional<String> privateSetting = settingsService.get(SettingKey.RSA_PRIVATE_KEY);
+        Optional<String> publicSetting  = settingsService.get(SettingKey.RSA_PUBLIC_KEY);
 
 
         if (privateSetting.isPresent() && publicSetting.isPresent()) {
-            loadFromDb(privateSetting.get().getValue(), publicSetting.get().getValue());
+            loadFromDb(privateSetting.get(), publicSetting.get());
         } else {
             log.warn("RSA keypair missing or incomplete, generating new pair");
             generateAndPersist();
@@ -89,8 +87,8 @@ public class RsaKeyConfig {
 
             String privateBase64 = Base64.getEncoder().encodeToString(privateKey.getEncoded());
 
-            settingsRepository.save(new Setting(SettingKey.RSA_PRIVATE_KEY, privateBase64));
-            settingsRepository.save(new Setting(SettingKey.RSA_PUBLIC_KEY,  publicKeyBase64));
+            settingsService.set(SettingKey.RSA_PRIVATE_KEY, privateBase64);
+            settingsService.set(SettingKey.RSA_PUBLIC_KEY,  publicKeyBase64);
 
             log.info("RSA keypair generated and persisted");
         } catch (Exception e) {

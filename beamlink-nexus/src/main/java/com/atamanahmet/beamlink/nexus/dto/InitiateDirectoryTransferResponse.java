@@ -9,4 +9,5 @@ import java.util.UUID;
 @AllArgsConstructor
 public class InitiateDirectoryTransferResponse {
     private UUID directoryTransferId;
+    private int skippedCount;
 }

@@ -19,11 +19,15 @@ public interface FileTransferRepository extends JpaRepository<FileTransfer, UUID
 
     List<FileTransfer> findByStatus(TransferStatus status);
 
+    boolean existsByStatus(TransferStatus status);
+
+    long countByStatus(TransferStatus status);
+
     List<FileTransfer> findByStatusAndExpiresAtBefore(TransferStatus status, Instant now);
 
     List<FileTransfer> findAllByOrderByCreatedAtDesc();
 
-    List<FileTransfer> findByTargetAgentIdAndStatus(UUID agentId, TransferStatus transferStatus);
+    List<FileTransfer> findByTargetDeviceIdAndStatus(UUID deviceId, TransferStatus transferStatus);
 
     List<FileTransfer> findByDirectoryTransferId(UUID directoryTransferId);
 

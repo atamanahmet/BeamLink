@@ -2,7 +2,7 @@ package com.atamanahmet.beamlink.nexus.config;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.boot.web.context.WebServerInitializedEvent;
+import org.springframework.boot.web.server.context.WebServerInitializedEvent;
 import org.springframework.context.ApplicationListener;
 import org.springframework.context.event.ContextClosedEvent;
 import org.springframework.context.event.EventListener;
@@ -14,11 +14,11 @@ import java.io.IOException;
 import java.net.InetAddress;
 
 /**
- * Advertises Nexus on the LAN via mDNS so agents can discover it
+ * Advertises Nexus on the LAN via mDNS so devices can discover it
  * without hardcoded IP/port config.
  *
  * Service type: _beamlink._tcp.local.
- * Agents query this type and get back the Nexus IP + bound port.
+ * Devices query this type and get back the Nexus IP + bound port.
  */
 @Slf4j
 @Component
@@ -35,7 +35,6 @@ public class NexusMdnsAdvertiser implements ApplicationListener<WebServerInitial
 
     @Override
     public void onApplicationEvent(WebServerInitializedEvent event) {
-        int port = event.getWebServer().getPort();
         String ip = networkConfig.getResolvedIp();
 
         try {
@@ -45,15 +44,15 @@ public class NexusMdnsAdvertiser implements ApplicationListener<WebServerInitial
             ServiceInfo serviceInfo = ServiceInfo.create(
                     SERVICE_TYPE,
                     SERVICE_NAME,
-                    port,
+                    nexusConfig.getTlsPort(),
                     "name=" + nexusConfig.getName()
             );
 
             jmDNS.registerService(serviceInfo);
-            log.info("mDNS: Nexus advertised as '{}' on {}:{}", SERVICE_NAME, ip, port);
+            log.info("mDNS: Nexus advertised as '{}' on {}:{}", SERVICE_NAME, ip, nexusConfig.getTlsPort());
 
         } catch (IOException e) {
-            log.warn("mDNS advertisement failed — agents must use manual config. Reason: {}", e.getMessage());
+            log.warn("mDNS advertisement failed — devices must use manual config. Reason: {}", e.getMessage());
         }
     }
 

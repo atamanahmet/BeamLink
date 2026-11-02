@@ -9,4 +9,10 @@ import java.net.http.HttpResponse;
  */
 public interface HttpSender {
     HttpResponse<String> send(HttpRequest request) throws IOException, InterruptedException;
+
+    /**
+     * HTTPS to a peer with a listed pin. Never used for http.
+     */
+    HttpResponse<String> sendPinned(HttpRequest request, String pin)
+            throws IOException, InterruptedException;
 }

@@ -7,5 +7,6 @@ public record NexusMeResponse(
         String nexusName,
         String ipAddress,
         Integer port,
-        String username
+        String username,
+        boolean hasRecoveryCode
 ) {}

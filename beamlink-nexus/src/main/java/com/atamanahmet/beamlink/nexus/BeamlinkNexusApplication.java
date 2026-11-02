@@ -24,8 +24,8 @@ public class BeamlinkNexusApplication {
         System.out.println("==================================");
         System.out.println("🌐 BEAMLINK NEXUS STARTED");
         System.out.println("==================================");
-        System.out.println("Dashboard: http://" + ip + ":" + port);
-        System.out.println("API:       http://" + ip + ":" + port);
+        System.out.println("Dashboard: http://127.0.0.1:" + port);
+        System.out.println("API TLS:   https://" + ip + ":" + nexusConfig.getTlsPort());
         System.out.println("==================================");
         System.out.println(" ");
 

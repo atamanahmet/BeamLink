@@ -28,6 +28,8 @@ public class NexusConfig {
     private String configuredIp;
     @Value("${server.port}")
     private int nexusPort;
+    @Value("${nexus.tls.port}")
+    private int tlsPort;
     @Value("${nexus.name}")
     private String name;
     @Value("${nexus.admin.username}")
@@ -37,8 +39,7 @@ public class NexusConfig {
 
     @PostConstruct
     public void registerSelfOrigin() {
-        String origin = "http://" + getIp() + ":" + nexusPort;
-        corsRegistry.register(origin);
+        corsRegistry.register("http://127.0.0.1:" + nexusPort);
     }
 
     public String getIp() {

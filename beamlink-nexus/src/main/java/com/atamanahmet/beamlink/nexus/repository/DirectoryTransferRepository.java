@@ -1,6 +1,7 @@
 package com.atamanahmet.beamlink.nexus.repository;
 
 import com.atamanahmet.beamlink.nexus.domain.DirectoryTransfer;
+import com.atamanahmet.beamlink.nexus.domain.enums.GroupTransferStatus;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.stereotype.Repository;
 
@@ -12,4 +13,7 @@ import java.util.UUID;
 public interface DirectoryTransferRepository extends JpaRepository<DirectoryTransfer, UUID> {
     Optional<DirectoryTransfer> findByDirectoryTransferId(UUID directoryTransferId);
     List<DirectoryTransfer> findAllByOrderByCreatedAtDesc();
+    boolean existsByStatus(GroupTransferStatus status);
+
+    long countByStatus(GroupTransferStatus status);
 }
