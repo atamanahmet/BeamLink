@@ -1,4 +1,4 @@
-package com.atamanahmet.beamlink.agent.service;
+package com.atamanahmet.beamlink.peer.service;
 
 /**
  * Pure helpers for speed limit override and Mb/s to bytes/s.

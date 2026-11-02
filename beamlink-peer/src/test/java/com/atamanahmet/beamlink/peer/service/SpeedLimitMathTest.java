@@ -1,4 +1,4 @@
-package com.atamanahmet.beamlink.agent.service;
+package com.atamanahmet.beamlink.peer.service;
 
 import org.junit.jupiter.api.Test;
 
