@@ -1,13 +1,13 @@
-package com.atamanahmet.beamlink.agent.service;
+package com.atamanahmet.beamlink.peer.service;
 
-import com.atamanahmet.beamlink.agent.domain.enums.ResumePolicyMode;
+import com.atamanahmet.beamlink.peer.domain.enums.ResumePolicyMode;
 import org.springframework.stereotype.Component;
 
 /**
  * In-memory resume policy synced from Nexus ping.
  */
 @Component
-public class AgentResumePolicyHolder {
+public class DeviceResumePolicyHolder {
 
     private volatile ResumePolicyMode mode = ResumePolicy.DEFAULT_MODE;
 

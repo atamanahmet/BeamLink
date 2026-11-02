@@ -1,7 +1,7 @@
-package com.atamanahmet.beamlink.agent.service;
+package com.atamanahmet.beamlink.peer.service;
 
-import com.atamanahmet.beamlink.agent.domain.enums.PauseOwner;
-import com.atamanahmet.beamlink.agent.domain.enums.ResumePolicyMode;
+import com.atamanahmet.beamlink.peer.domain.enums.PauseOwner;
+import com.atamanahmet.beamlink.peer.domain.enums.ResumePolicyMode;
 import org.junit.jupiter.api.Test;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -31,4 +31,13 @@ class ResumePolicyTest {
         assertThat(ResumePolicy.canResume(
                 ResumePolicyMode.ANYONE, PauseOwner.TARGET, PauseOwner.SOURCE)).isTrue();
     }
+
+    @Test
+    void nullPausedByResumableUnderOwnerOnly() {
+        assertThat(ResumePolicy.canResume(
+                ResumePolicyMode.OWNER_ONLY, PauseOwner.SOURCE, null)).isTrue();
+        assertThat(ResumePolicy.canResume(
+                ResumePolicyMode.OWNER_ONLY, PauseOwner.TARGET, null)).isTrue();
+    }
 }
+

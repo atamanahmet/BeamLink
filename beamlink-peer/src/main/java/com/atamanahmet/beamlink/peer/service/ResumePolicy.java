@@ -1,7 +1,7 @@
-package com.atamanahmet.beamlink.agent.service;
+package com.atamanahmet.beamlink.peer.service;
 
-import com.atamanahmet.beamlink.agent.domain.enums.PauseOwner;
-import com.atamanahmet.beamlink.agent.domain.enums.ResumePolicyMode;
+import com.atamanahmet.beamlink.peer.domain.enums.PauseOwner;
+import com.atamanahmet.beamlink.peer.domain.enums.ResumePolicyMode;
 
 /**
  * Pure resume rules. Default mode is OWNER_ONLY.
@@ -17,8 +17,11 @@ public final class ResumePolicy {
      */
     public static boolean canResume(
             ResumePolicyMode mode, PauseOwner side, PauseOwner pausedBy) {
-        if (mode == null || side == null || pausedBy == null) {
+        if (mode == null || side == null) {
             return false;
+        }
+        if (pausedBy == null) {
+            return true;
         }
         if (mode == ResumePolicyMode.ANYONE) {
             return true;

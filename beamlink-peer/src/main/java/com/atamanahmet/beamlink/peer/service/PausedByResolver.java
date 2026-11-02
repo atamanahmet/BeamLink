@@ -1,6 +1,6 @@
-package com.atamanahmet.beamlink.agent.service;
+package com.atamanahmet.beamlink.peer.service;
 
-import com.atamanahmet.beamlink.agent.domain.enums.PauseOwner;
+import com.atamanahmet.beamlink.peer.domain.enums.PauseOwner;
 
 /**
  * SOURCE wins when both sides pause at once.
@@ -13,6 +13,9 @@ public final class PausedByResolver {
      * Keeps SOURCE if already set or incoming, else takes incoming.
      */
     public static PauseOwner resolvePausedBy(PauseOwner current, PauseOwner incoming) {
+        if (incoming == null) {
+            throw new IllegalArgumentException("pausedBy required");
+        }
         if (current == PauseOwner.SOURCE) {
             return PauseOwner.SOURCE;
         }

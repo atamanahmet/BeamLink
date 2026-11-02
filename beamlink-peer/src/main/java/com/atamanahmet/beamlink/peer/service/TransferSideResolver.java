@@ -1,6 +1,6 @@
-package com.atamanahmet.beamlink.agent.service;
+package com.atamanahmet.beamlink.peer.service;
 
-import com.atamanahmet.beamlink.agent.domain.enums.PauseOwner;
+import com.atamanahmet.beamlink.peer.domain.enums.PauseOwner;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 
@@ -13,20 +13,20 @@ import java.util.UUID;
 @RequiredArgsConstructor
 public class TransferSideResolver {
 
-    private final AgentService agentService;
+    private final DeviceService deviceService;
 
     /**
-     * Uses local agent id, then target fields as fallback.
+     * Uses local device id, then target fields as fallback.
      */
-    public PauseOwner resolve(UUID sourceAgentId, UUID targetAgentId, String targetIp) {
-        UUID localId = agentService.getAgentId();
-        if (localId != null && localId.equals(sourceAgentId)) {
+    public PauseOwner resolve(UUID sourceDeviceId, UUID targetDeviceId, String targetIp) {
+        UUID localId = deviceService.getDeviceId();
+        if (localId != null && localId.equals(sourceDeviceId)) {
             return PauseOwner.SOURCE;
         }
-        if (localId != null && localId.equals(targetAgentId)) {
+        if (localId != null && localId.equals(targetDeviceId)) {
             return PauseOwner.TARGET;
         }
-        if (targetAgentId == null && sourceAgentId != null) {
+        if (targetDeviceId == null && sourceDeviceId != null) {
             return PauseOwner.TARGET;
         }
         if (targetIp != null && !targetIp.isBlank()) {

@@ -1,6 +1,6 @@
-package com.atamanahmet.beamlink.agent.dto;
+package com.atamanahmet.beamlink.peer.dto;
 
-import com.atamanahmet.beamlink.agent.domain.enums.PauseOwner;
+import com.atamanahmet.beamlink.peer.domain.enums.PauseOwner;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
@@ -13,4 +13,5 @@ import lombok.Setter;
 @NoArgsConstructor
 public class PauseNotifyRequest {
     private PauseOwner pausedBy;
+    private String reason;
 }

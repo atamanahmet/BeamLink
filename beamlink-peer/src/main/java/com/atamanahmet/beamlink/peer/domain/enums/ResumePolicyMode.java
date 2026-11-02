@@ -1,4 +1,4 @@
-package com.atamanahmet.beamlink.agent.domain.enums;
+package com.atamanahmet.beamlink.peer.domain.enums;
 
 /**
  * Who is allowed to resume a paused transfer.

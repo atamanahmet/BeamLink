@@ -1,4 +1,4 @@
-package com.atamanahmet.beamlink.agent.domain.enums;
+package com.atamanahmet.beamlink.peer.domain.enums;
 
 /**
  * Which side paused the transfer.

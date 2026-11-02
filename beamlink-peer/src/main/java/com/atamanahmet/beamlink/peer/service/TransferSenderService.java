@@ -1,14 +1,14 @@
-package com.atamanahmet.beamlink.agent.service;
+package com.atamanahmet.beamlink.peer.service;
 
-import com.atamanahmet.beamlink.agent.config.AgentConfig;
-import com.atamanahmet.beamlink.agent.domain.FileTransfer;
-import com.atamanahmet.beamlink.agent.domain.enums.TransferStatus;
-import com.atamanahmet.beamlink.agent.dto.InitiateTransferRequest;
-import com.atamanahmet.beamlink.agent.dto.InitiateTransferResponse;
-import com.atamanahmet.beamlink.agent.exception.FileTransferException;
-import com.atamanahmet.beamlink.agent.http.TransferHttpClient;
-import com.atamanahmet.beamlink.agent.repository.FileTransferRepository;
-import com.atamanahmet.beamlink.agent.util.PathNormalizer;
+import com.atamanahmet.beamlink.peer.config.DeviceConfig;
+import com.atamanahmet.beamlink.peer.domain.FileTransfer;
+import com.atamanahmet.beamlink.peer.domain.enums.TransferStatus;
+import com.atamanahmet.beamlink.peer.dto.InitiateTransferRequest;
+import com.atamanahmet.beamlink.peer.dto.InitiateTransferResponse;
+import com.atamanahmet.beamlink.peer.exception.FileTransferException;
+import com.atamanahmet.beamlink.peer.exception.TransferProtocolException;
+import com.atamanahmet.beamlink.peer.http.TransferHttpClient;
+import com.atamanahmet.beamlink.peer.util.PathNormalizer;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -27,10 +27,10 @@ import java.util.UUID;
 @RequiredArgsConstructor
 public class TransferSenderService {
 
-    private final FileTransferRepository transferRepository;
-    private final AgentConfig agentConfig;
+    private final FileTransferService fileTransferService;
+    private final DeviceConfig deviceConfig;
     private final TransferHttpClient transferHttpClient;
-    private final AgentService agentService;
+    private final DeviceService deviceService;
 
     /**
      * Registers on target first, rollback if it fails
@@ -55,8 +55,8 @@ public class TransferSenderService {
 
         FileTransfer transfer = FileTransfer.initiate(
                 transferId,
-                agentService.getAgentId(),
-                request.getTargetAgentId(),
+                deviceService.getDeviceId(),
+                request.getTargetDeviceId(),
                 fileName,
                 cleanedPath,
                 fileSize
@@ -64,25 +64,35 @@ public class TransferSenderService {
         transfer.setTargetIp(request.getTargetIp());
         transfer.setTargetPort(request.getTargetPort());
         transfer.setStatus(TransferStatus.PENDING);
-        transfer.setExpiresAt(Instant.now().plusSeconds(agentConfig.getTransferExpiryHours() * 3600L));
-        transferRepository.save(transfer);
+        transfer.setExpiresAt(Instant.now().plusSeconds(deviceConfig.getTransferExpiryHours() * 3600L));
+        fileTransferService.save(transfer);
 
         try {
-            transferHttpClient.registerTransfer(request, transferId, agentService.getAgentId(), fileName, fileSize);
+            transferHttpClient.registerTransfer(
+                    request, transferId, deviceService.getDeviceId(), fileName, fileSize);
+        } catch (TransferProtocolException e) {
+            if (RegisterRejectRule.keepFailed(e.getCode())) {
+                transfer.setStatus(TransferStatus.FAILED);
+                transfer.setFailureReason(e.getMessage());
+                fileTransferService.save(transfer);
+            } else {
+                fileTransferService.delete(transfer);
+            }
+            throw e;
         } catch (FileTransferException e) {
-            transferRepository.delete(transfer);
+            fileTransferService.delete(transfer);
             throw e;
         }
 
         transfer.setStatus(TransferStatus.ACTIVE);
-        transferRepository.save(transfer);
-        log.info("Transfer initiated: {} → {} ({})", fileName, request.getTargetAgentId(), transferId);
+        fileTransferService.save(transfer);
+        log.info("Transfer initiated: {} → {} ({})", fileName, request.getTargetDeviceId(), transferId);
 
         return new InitiateTransferResponse(transferId);
     }
 
     public void resume(UUID transferId) {
-        FileTransfer transfer = transferRepository.findByTransferId(transferId)
+        FileTransfer transfer = fileTransferService.findByTransferId(transferId)
                 .orElseThrow(() -> new FileTransferException("Transfer not found: " + transferId, null));
 
         if (transfer.getStatus() != TransferStatus.PAUSED) {
@@ -98,9 +108,17 @@ public class TransferSenderService {
             throw new FileTransferException("Source file no longer exists: " + cleanedPath, null);
         }
 
-        long targetOffset = transferHttpClient.resolveStartOffset(
-                transfer.getTargetIp(), transfer.getTargetPort(), transferId,
-                transfer.getConfirmedOffset());
+        long targetOffset;
+        try {
+            targetOffset = transferHttpClient.resolveStartOffset(
+                    transfer.getTargetIp(), transfer.getTargetPort(), transferId,
+                    transfer.getConfirmedOffset());
+        } catch (TransferProtocolException e) {
+            if (SessionLostRule.isLost(e.getCode())) {
+                markFailed(transferId, SessionLostRule.MESSAGE);
+            }
+            throw e;
+        }
 
         if (targetOffset != transfer.getConfirmedOffset()) {
             log.info("Correcting offset for {} from {} to {} (target state)",
@@ -110,30 +128,30 @@ public class TransferSenderService {
 
         transfer.setPausedBy(null);
         transfer.setStatus(TransferStatus.ACTIVE);
-        transferRepository.save(transfer);
+        fileTransferService.save(transfer);
     }
 
     public FileTransfer getTransfer(UUID transferId) {
-        return transferRepository.findByTransferId(transferId)
+        return fileTransferService.findByTransferId(transferId)
                 .orElseThrow(() -> new FileTransferException("Transfer not found: " + transferId, null));
     }
 
     public TransferStatus getStatus(UUID transferId) {
-        return transferRepository.findStatusByTransferId(transferId)
+        return fileTransferService.findStatusByTransferId(transferId)
                 .orElseThrow(() -> new FileTransferException("Transfer not found: " + transferId, null));
     }
 
     public List<FileTransfer> getAll() {
-        return transferRepository.findAllByOrderByCreatedAtDesc();
+        return fileTransferService.findAllByOrderByCreatedAtDesc();
     }
 
     @Transactional
     public void cancel(UUID transferId) {
-        transferRepository.findByTransferId(transferId).ifPresent(transfer -> {
+        fileTransferService.findByTransferId(transferId).ifPresent(transfer -> {
             if (transfer.getStatus() == TransferStatus.ACTIVE
                     || transfer.getStatus() == TransferStatus.PAUSED) {
                 transfer.setStatus(TransferStatus.CANCELLED);
-                transferRepository.save(transfer);
+                fileTransferService.save(transfer);
                 log.info("Transfer cancelled: {}", transferId);
             }
         });
@@ -142,13 +160,13 @@ public class TransferSenderService {
     /** Only terminal state transfers can be deleted. */
     @Transactional
     public void delete(UUID transferId) {
-        transferRepository.findByTransferId(transferId).ifPresent(transfer -> {
+        fileTransferService.findByTransferId(transferId).ifPresent(transfer -> {
             TransferStatus s = transfer.getStatus();
             if (s == TransferStatus.COMPLETED
                     || s == TransferStatus.FAILED
                     || s == TransferStatus.CANCELLED
                     || s == TransferStatus.EXPIRED) {
-                transferRepository.delete(transfer);
+                fileTransferService.delete(transfer);
                 log.info("Transfer deleted by user: {}", transferId);
             }
         });
@@ -156,13 +174,31 @@ public class TransferSenderService {
 
     @Transactional
     public void markFailed(UUID transferId, String reason) {
-        transferRepository.findByTransferId(transferId).ifPresent(transfer -> {
+        fileTransferService.findByTransferId(transferId).ifPresent(transfer -> {
             transfer.setStatus(TransferStatus.FAILED);
             transfer.setFailureReason(reason);
-            transferRepository.save(transfer);
+            fileTransferService.save(transfer);
             if (transfer.getTargetIp() != null && transfer.getTargetPort() != null) {
-                transferHttpClient.notifyCancelToPeer(
-                        transfer.getTargetIp(), transfer.getTargetPort(), transferId);
+                transferHttpClient.notifyFailToPeer(
+                        transfer.getTargetIp(), transfer.getTargetPort(), transferId, reason);
+            }
+        });
+    }
+
+    /**
+     * Peer fail-notify: mark local sender row FAILED without notifying back.
+     */
+    @Transactional
+    public void applyFailNotify(UUID transferId, String reason) {
+        fileTransferService.findByTransferId(transferId).ifPresent(transfer -> {
+            TransferStatus s = transfer.getStatus();
+            if (s == TransferStatus.ACTIVE
+                    || s == TransferStatus.PAUSED
+                    || s == TransferStatus.PENDING) {
+                transfer.setStatus(TransferStatus.FAILED);
+                transfer.setFailureReason(reason);
+                fileTransferService.save(transfer);
+                log.info("Transfer failed via peer notify: {} ({})", transferId, reason);
             }
         });
     }
