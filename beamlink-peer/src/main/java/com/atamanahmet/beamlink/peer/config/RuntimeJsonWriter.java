@@ -1,8 +1,8 @@
-package com.atamanahmet.beamlink.agent.config;
+package com.atamanahmet.beamlink.peer.config;
 
 import lombok.RequiredArgsConstructor;
 
-import org.springframework.boot.web.context.WebServerInitializedEvent;
+import org.springframework.boot.web.server.context.WebServerInitializedEvent;
 import org.springframework.context.ApplicationListener;
 
 import org.springframework.stereotype.Component;
@@ -18,7 +18,7 @@ public class RuntimeJsonWriter implements ApplicationListener<WebServerInitializ
     @Override
     public void onApplicationEvent(WebServerInitializedEvent event) {
         int port = event.getWebServer().getPort();
-        writeRuntimeJson("agent-runtime.json", port);
+        writeRuntimeJson("peer-runtime.json", port);
     }
 
     private void writeRuntimeJson(String filename, int port) {

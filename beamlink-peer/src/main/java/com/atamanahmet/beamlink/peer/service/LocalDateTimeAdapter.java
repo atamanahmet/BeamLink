@@ -1,4 +1,4 @@
-package com.atamanahmet.beamlink.agent.service;
+package com.atamanahmet.beamlink.peer.service;
 
 import com.google.gson.*;
 import java.lang.reflect.Type;

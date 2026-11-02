@@ -1,4 +1,4 @@
-package com.atamanahmet.beamlink.agent.config;
+package com.atamanahmet.beamlink.peer.config;
 
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
@@ -21,7 +21,7 @@ public class RuntimeDirectoryInitializer {
 
     @PostConstruct
     public void init() {
-        String[] subdirs = {"data/database", "data/uploads", "data/temp", "logs"};
+        String[] subdirs = {"data/database", "data/uploads", "logs"};
         for (String sub : subdirs) {
             Path dir = Path.of(runtimeDir, sub);
             try {
