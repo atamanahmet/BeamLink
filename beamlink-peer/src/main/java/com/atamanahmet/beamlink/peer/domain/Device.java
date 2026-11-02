@@ -1,6 +1,6 @@
-package com.atamanahmet.beamlink.agent.domain;
+package com.atamanahmet.beamlink.peer.domain;
 
-import com.atamanahmet.beamlink.agent.domain.enums.AgentState;
+import com.atamanahmet.beamlink.peer.domain.enums.DeviceState;
 import jakarta.persistence.*;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
@@ -10,37 +10,27 @@ import org.hibernate.annotations.JdbcTypeCode;
 import java.util.UUID;
 
 @Entity
-@Table(name = "agent")
+@Table(name = "device")
 @Getter
 @Setter
 @NoArgsConstructor
-public class Agent {
+public class Device {
 
-    /* Only one agent per instance */
+    /* Only one device per instance */
     @Id
     @Column(nullable = false, updatable = false)
     private Long id = 1L;
 
     @Column
     @JdbcTypeCode(12)
-    private UUID agentId;
+    private UUID deviceId;
 
     @Column
     @JdbcTypeCode(12)
     private UUID publicId;
 
     @Column(nullable = false)
-    private String agentName;
-
-    @Column(nullable = false)
-
-    private String username;
-    @Column(nullable = false)
-
-    private String encodedPassword;
-
-    @Column(nullable = false)
-    private boolean credentialsConfigured = false;
+    private String deviceName;
 
     @Column(nullable = false)
     private String ipAddress;
@@ -59,10 +49,10 @@ public class Agent {
 
     @Enumerated(EnumType.STRING)
     @Column(nullable = false)
-    private AgentState state = AgentState.UNREGISTERED;
+    private DeviceState state = DeviceState.UNREGISTERED;
 
     public boolean isApproved() {
-        return state == AgentState.APPROVED;
+        return state == DeviceState.APPROVED;
     }
 
 }
