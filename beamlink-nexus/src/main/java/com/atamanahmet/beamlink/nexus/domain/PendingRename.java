@@ -26,7 +26,7 @@ public class PendingRename {
     private UUID id;
 
     @JdbcTypeCode(12)
-    private UUID agentId;
+    private UUID deviceId;
 
     private String currentName;
 

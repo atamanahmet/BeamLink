@@ -1,4 +1,4 @@
-CREATE TABLE registered_agents (
+CREATE TABLE registered_devices (
     id                  VARCHAR(36)     NOT NULL PRIMARY KEY,
     name                VARCHAR(255),
     ip_address          VARCHAR(255),
@@ -11,7 +11,7 @@ CREATE TABLE registered_agents (
     approved_at         TIMESTAMP,
     last_seen_at        TIMESTAMP,
     approval_pushed     BOOLEAN         NOT NULL DEFAULT FALSE,
-    CONSTRAINT uq_agent_ip_port UNIQUE (ip_address, port)
+    CONSTRAINT uq_device_ip_port UNIQUE (ip_address, port)
 );
 
 CREATE TABLE nexus (
@@ -34,7 +34,7 @@ CREATE TABLE peer_list_version (
 
 CREATE TABLE pending_rename (
     id             VARCHAR(36)    NOT NULL PRIMARY KEY,
-    agent_id       VARCHAR(36),
+    device_id       VARCHAR(36),
     current_name   VARCHAR(255),
     requested_name VARCHAR(255),
     requested_at   TIMESTAMP
@@ -42,10 +42,10 @@ CREATE TABLE pending_rename (
 
 CREATE TABLE transfer_logs (
     id                   VARCHAR(36)    NOT NULL PRIMARY KEY,
-    from_agent_id        VARCHAR(36),
-    from_agent_name      VARCHAR(255),
-    to_agent_id          VARCHAR(36),
-    to_agent_name        VARCHAR(255),
+    from_device_id        VARCHAR(36),
+    from_device_name      VARCHAR(255),
+    to_device_id          VARCHAR(36),
+    to_device_name        VARCHAR(255),
     filename             VARCHAR(255),
     file_size            BIGINT,
     average_speed_mbps   DOUBLE NOT NULL DEFAULT 0.0,
@@ -55,8 +55,8 @@ CREATE TABLE transfer_logs (
 CREATE TABLE batch_transfer (
     batch_transfer_id VARCHAR(36)  NOT NULL PRIMARY KEY,
     dispatch_id VARCHAR(36),
-    source_agent_id   VARCHAR(36)  NOT NULL,
-    target_agent_id   VARCHAR(36),
+    source_device_id   VARCHAR(36)  NOT NULL,
+    target_device_id   VARCHAR(36),
     target_ip         VARCHAR(255),
     target_port       INTEGER,
     total_files       INTEGER      NOT NULL,
@@ -70,8 +70,8 @@ CREATE TABLE batch_transfer (
 CREATE TABLE directory_transfer (
     directory_transfer_id VARCHAR(36)  NOT NULL PRIMARY KEY,
     dispatch_id           VARCHAR(36),
-    source_agent_id       VARCHAR(36)  NOT NULL,
-    target_agent_id       VARCHAR(36),
+    source_device_id       VARCHAR(36)  NOT NULL,
+    target_device_id       VARCHAR(36),
     target_ip             VARCHAR(255),
     target_port           INTEGER,
     directory_name        VARCHAR(255) NOT NULL,
@@ -94,8 +94,8 @@ CREATE TABLE file_transfer (
     transfer_id             VARCHAR(36)   NOT NULL PRIMARY KEY,
     directory_transfer_id   VARCHAR(36),
     batch_transfer_id       VARCHAR(36),
-    source_agent_id         VARCHAR(36)   NOT NULL,
-    target_agent_id         VARCHAR(36),
+    source_device_id         VARCHAR(36)   NOT NULL,
+    target_device_id         VARCHAR(36),
     source_ip               VARCHAR(36),
     source_port             INTEGER,
     target_ip               VARCHAR(255),

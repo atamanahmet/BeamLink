@@ -1,6 +1,6 @@
 package com.atamanahmet.beamlink.nexus.domain.enums;
 
-public enum AgentState {
+public enum DeviceState {
     PENDING_APPROVAL,
     APPROVED,
     REJECTED,

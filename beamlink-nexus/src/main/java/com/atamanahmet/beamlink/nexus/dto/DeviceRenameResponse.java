@@ -9,6 +9,6 @@ import lombok.NoArgsConstructor;
 @Builder
 @AllArgsConstructor
 @NoArgsConstructor
-public class AgentRenameResponse {
-    private String agentName;
+public class DeviceRenameResponse {
+    private String deviceName;
 }

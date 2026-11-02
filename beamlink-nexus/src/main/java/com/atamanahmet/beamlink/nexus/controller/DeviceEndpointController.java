@@ -1,7 +1,7 @@
 package com.atamanahmet.beamlink.nexus.controller;
 
-import com.atamanahmet.beamlink.nexus.dto.AgentRenameRequest;
-import com.atamanahmet.beamlink.nexus.service.AgentService;
+import com.atamanahmet.beamlink.nexus.dto.DeviceRenameRequest;
+import com.atamanahmet.beamlink.nexus.service.DeviceService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
@@ -9,17 +9,17 @@ import org.springframework.web.bind.annotation.*;
 import java.util.UUID;
 
 @RestController
-@RequestMapping("/api/nexus/agent")
+@RequestMapping("/api/nexus/device")
 @RequiredArgsConstructor
-public class AgentEndpointController {
+public class DeviceEndpointController {
 
-    private final AgentService agentService;
+    private final DeviceService deviceService;
 
     @PostMapping("/{id}/rename")
     public ResponseEntity<Void> requestRename(
             @PathVariable UUID id,
-            @RequestBody AgentRenameRequest request) {
-        agentService.requestRename(id, request.getName());
+            @RequestBody DeviceRenameRequest request) {
+        deviceService.requestRename(id, request.getName());
         return ResponseEntity.ok().build();
     }
 }

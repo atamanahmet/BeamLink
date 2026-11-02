@@ -11,7 +11,7 @@ import java.util.UUID;
 @NoArgsConstructor
 public class InitiateTransferRequest {
     private String filePath;
-    private UUID targetAgentId;
+    private UUID targetDeviceId;
     private String targetIp;
     private int targetPort;
 }

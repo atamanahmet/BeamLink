@@ -12,7 +12,7 @@ import java.util.UUID;
 @NoArgsConstructor
 public class InitiateSendRequest {
     private List<String> paths;
-    private UUID targetAgentId;
+    private UUID targetDeviceId;
     private String targetIp;
     private int targetPort;
 }

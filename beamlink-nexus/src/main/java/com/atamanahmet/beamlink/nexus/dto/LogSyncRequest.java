@@ -12,10 +12,10 @@ import java.util.UUID;
 @NoArgsConstructor
 public class LogSyncRequest {
     private UUID id;
-    private UUID fromAgentId;
-    private String fromAgentName;
-    private UUID toAgentId;
-    private String toAgentName;
+    private UUID fromDeviceId;
+    private String fromDeviceName;
+    private UUID toDeviceId;
+    private String toDeviceName;
     private String filename;
     private long fileSize;
     private double averageSpeedMbps;

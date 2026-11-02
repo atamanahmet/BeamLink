@@ -14,6 +14,7 @@ import lombok.Setter;
 @AllArgsConstructor
 public class NexusStats {
 
-    private AgentStats agentStats;
+    private DeviceStats deviceStats;
     private TransferStats transferStats;
+    private String tlsFingerprint;
 }
