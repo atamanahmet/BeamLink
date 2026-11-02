@@ -6,13 +6,13 @@ import com.atamanahmet.beamlink.nexus.domain.enums.GroupTransferStatus;
 import com.atamanahmet.beamlink.nexus.domain.enums.TransferStatus;
 import com.atamanahmet.beamlink.nexus.exception.FileTransferException;
 import com.atamanahmet.beamlink.nexus.repository.BatchTransferRepository;
-import com.atamanahmet.beamlink.nexus.repository.FileTransferRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 
 @Service
@@ -20,12 +20,12 @@ import java.util.UUID;
 public class BatchTransferService implements GroupTransferService {
 
     private final BatchTransferRepository batchTransferRepository;
-    private final FileTransferRepository fileTransferRepository;
+    private final FileTransferService fileTransferService;
 
     public BatchTransfer create(
             UUID batchTransferId,
-            UUID sourceAgentId,
-            UUID targetAgentId,
+            UUID sourceDeviceId,
+            UUID targetDeviceId,
             String targetIp,
             int targetPort,
             int totalFiles,
@@ -33,9 +33,13 @@ public class BatchTransferService implements GroupTransferService {
             UUID dispatchId
     ) {
         BatchTransfer bt = BatchTransfer.initiate(
-                batchTransferId, dispatchId, sourceAgentId, targetAgentId,
+                batchTransferId, dispatchId, sourceDeviceId, targetDeviceId,
                 targetIp, targetPort, totalFiles, totalSize);
         return batchTransferRepository.save(bt);
+    }
+
+    public Optional<BatchTransfer> findById(UUID batchTransferId) {
+        return batchTransferRepository.findById(batchTransferId);
     }
 
     public BatchTransfer get(UUID batchTransferId) {
@@ -44,12 +48,35 @@ public class BatchTransferService implements GroupTransferService {
                         "Batch transfer not found: " + batchTransferId, null));
     }
 
+    public BatchTransfer save(BatchTransfer batchTransfer) {
+        return batchTransferRepository.save(batchTransfer);
+    }
+
+    public void delete(BatchTransfer batchTransfer) {
+        batchTransferRepository.delete(batchTransfer);
+    }
+
+    public List<BatchTransfer> findAll() {
+        return batchTransferRepository.findAll();
+    }
+
     public List<BatchTransfer> getAll() {
         return batchTransferRepository.findAllByOrderByCreatedAtDesc();
     }
 
+    /**
+     * Deletes every batch transfer row.
+     */
+    public void deleteAll() {
+        batchTransferRepository.deleteAll();
+    }
+
+    public long countByStatus(GroupTransferStatus status) {
+        return batchTransferRepository.countByStatus(status);
+    }
+
     public void saveChildren(List<FileTransfer> fileTransfers) {
-        fileTransferRepository.saveAll(fileTransfers);
+        fileTransferService.saveAll(fileTransfers);
     }
 
     @Override
@@ -66,7 +93,7 @@ public class BatchTransferService implements GroupTransferService {
     @Override
     public List<FileTransfer> getOrderedQueue(UUID groupId) {
         List<FileTransfer> children =
-                fileTransferRepository.findByBatchTransferId(groupId);
+                fileTransferService.findByBatchTransferId(groupId);
 
         List<FileTransfer> queue = new ArrayList<>();
         children.stream()
@@ -81,7 +108,7 @@ public class BatchTransferService implements GroupTransferService {
 
     @Override
     public List<FileTransfer> getAllChildren(UUID groupId) {
-        return fileTransferRepository.findByBatchTransferId(groupId);
+        return fileTransferService.findByBatchTransferId(groupId);
     }
 
     @Override

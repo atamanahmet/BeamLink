@@ -1,5 +1,6 @@
 package com.atamanahmet.beamlink.nexus.controller;
 
+import com.atamanahmet.beamlink.nexus.exception.InvalidRequestException;
 import com.atamanahmet.beamlink.nexus.service.StorageService;
 import com.atamanahmet.beamlink.nexus.service.SystemService;
 import lombok.RequiredArgsConstructor;
@@ -42,16 +43,14 @@ public class StorageController {
         String rawPath = body.get("path");
 
         if (rawPath == null || rawPath.isBlank()) {
-            return ResponseEntity.badRequest()
-                    .body(Map.of("error", "Path must not be empty"));
+            throw new InvalidRequestException("Path must not be empty");
         }
 
         Path newPath;
         try {
             newPath = Path.of(rawPath);
         } catch (InvalidPathException e) {
-            return ResponseEntity.badRequest()
-                    .body(Map.of("error", "Invalid path: " + e.getMessage()));
+            throw new InvalidRequestException("Invalid path: " + e.getMessage(), e);
         }
 
         storageService.updateUploadsDir(newPath);

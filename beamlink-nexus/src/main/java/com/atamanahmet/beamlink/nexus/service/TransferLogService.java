@@ -1,10 +1,9 @@
 package com.atamanahmet.beamlink.nexus.service;
 
-import com.atamanahmet.beamlink.nexus.domain.Agent;
+import com.atamanahmet.beamlink.nexus.domain.Device;
 import com.atamanahmet.beamlink.nexus.domain.TransferLog;
 import com.atamanahmet.beamlink.nexus.dto.LogSyncRequest;
 import com.atamanahmet.beamlink.nexus.dto.TransferStats;
-import com.atamanahmet.beamlink.nexus.repository.AgentRepository;
 import com.atamanahmet.beamlink.nexus.repository.TransferLogRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -25,22 +24,22 @@ import java.util.UUID;
 public class TransferLogService {
 
     private final TransferLogRepository transferLogRepository;
-    private final AgentRepository agentRepository;
+    private final DeviceService deviceService;
     private final NexusService nexusService;
 
     @Transactional
-    public List<UUID> sync(UUID agentId, List<LogSyncRequest> incoming) {
+    public List<UUID> sync(UUID deviceId, List<LogSyncRequest> incoming) {
         List<TransferLog> toSave = incoming.stream()
                 .filter(r -> r.getId() != null)
                 .filter(r -> !transferLogRepository.existsById(r.getId()))
                 .map(r -> {
-                    UUID fromId = r.getFromAgentId();
+                    UUID fromId = r.getFromDeviceId();
                     return TransferLog.builder()
                             .id(r.getId())
-                            .fromAgentId(fromId)
-                            .fromAgentName(resolveFromAgentName(fromId, r.getFromAgentName()))
-                            .toAgentId(r.getToAgentId())
-                            .toAgentName(r.getToAgentName())
+                            .fromDeviceId(fromId)
+                            .fromDeviceName(resolveFromDeviceName(fromId, r.getFromDeviceName()))
+                            .toDeviceId(r.getToDeviceId())
+                            .toDeviceName(r.getToDeviceName())
                             .filename(r.getFilename())
                             .fileSize(r.getFileSize())
                             .averageSpeedMbps(r.getAverageSpeedMbps())
@@ -51,7 +50,7 @@ public class TransferLogService {
 
         if (!toSave.isEmpty()) {
             transferLogRepository.saveAll(toSave);
-            log.info("Synced {}/{} new logs from agent {}.", toSave.size(), incoming.size(), agentId);
+            log.info("Synced {}/{} new logs from device {}.", toSave.size(), incoming.size(), deviceId);
         }
 
         return incoming.stream()
@@ -60,13 +59,13 @@ public class TransferLogService {
                 .toList();
     }
 
-    public void logTransfer(UUID fromAgentId, String fromAgentName, String filename, long fileSize, double averageSpeedMbps) {
+    public void logTransfer(UUID fromDeviceId, String fromDeviceName, String filename, long fileSize, double averageSpeedMbps) {
         TransferLog entry = TransferLog.builder()
                 .id(UUID.randomUUID())
-                .fromAgentId(fromAgentId)
-                .fromAgentName(resolveFromAgentName(fromAgentId, fromAgentName))
-                .toAgentId(UUID.fromString("00000000-0000-0000-0000-000000000000"))
-                .toAgentName("Nexus")
+                .fromDeviceId(fromDeviceId)
+                .fromDeviceName(resolveFromDeviceName(fromDeviceId, fromDeviceName))
+                .toDeviceId(UUID.fromString("00000000-0000-0000-0000-000000000000"))
+                .toDeviceName("Nexus")
                 .filename(filename)
                 .fileSize(fileSize)
                 .averageSpeedMbps(averageSpeedMbps)
@@ -97,21 +96,29 @@ public class TransferLogService {
     }
 
     /**
-     * Fills a missing source name from the agent table or local nexus name.
+     * Deletes every transfer log row.
      */
-    private String resolveFromAgentName(UUID fromAgentId, String provided) {
+    @Transactional
+    public void deleteAll() {
+        transferLogRepository.deleteAll();
+    }
+
+    /**
+     * Fills a missing source name from the device table or local nexus name.
+     */
+    private String resolveFromDeviceName(UUID fromDeviceId, String provided) {
         if (provided != null && !provided.isBlank()) {
             return provided;
         }
-        if (fromAgentId == null) {
+        if (fromDeviceId == null) {
             return null;
         }
         UUID nexusId = nexusService.getNexusId();
-        if (nexusId != null && nexusId.equals(fromAgentId)) {
+        if (nexusId != null && nexusId.equals(fromDeviceId)) {
             return nexusService.getNexusName();
         }
-        return agentRepository.findById(fromAgentId)
-                .map(Agent::getName)
+        return deviceService.findOptional(fromDeviceId)
+                .map(Device::getName)
                 .orElse(null);
     }
 }

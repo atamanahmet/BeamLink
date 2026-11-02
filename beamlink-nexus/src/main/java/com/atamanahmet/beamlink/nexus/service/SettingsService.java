@@ -45,6 +45,7 @@ public class SettingsService {
     }
 
     public void set(SettingKey key, String value) {
+        key.validate(value);
         settingsRepository.save(new Setting(key, value));
     }
 

@@ -1,14 +1,19 @@
 package com.atamanahmet.beamlink.nexus.controller;
 
-import com.atamanahmet.beamlink.nexus.dto.DispatchResultItem;
 import com.atamanahmet.beamlink.nexus.dto.InitiateSendRequest;
+import com.atamanahmet.beamlink.nexus.dto.InitiateSendResponse;
 import com.atamanahmet.beamlink.nexus.dto.SpeedLimitRequest;
+import com.atamanahmet.beamlink.nexus.dto.TransferListPage;
 import com.atamanahmet.beamlink.nexus.dto.TransferSummary;
 import com.atamanahmet.beamlink.nexus.exception.FileTransferException;
+import com.atamanahmet.beamlink.nexus.exception.TransferProtocolException;
+import com.atamanahmet.beamlink.nexus.service.FileTransferErrorRule;
 import com.atamanahmet.beamlink.nexus.service.TransferDispatchService;
+import com.atamanahmet.beamlink.nexus.service.TransferListPaging;
 import com.atamanahmet.beamlink.nexus.service.TransferManagementService;
 import com.atamanahmet.beamlink.nexus.service.TransferQueryService;
 import lombok.RequiredArgsConstructor;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
@@ -27,14 +32,18 @@ public class TransferManagementController {
     private final TransferManagementService managementService;
 
     @PostMapping("/send")
-    public ResponseEntity<List<DispatchResultItem>> send(
+    public ResponseEntity<InitiateSendResponse> send(
             @RequestBody InitiateSendRequest request) {
         return ResponseEntity.ok(dispatchService.dispatch(request));
     }
 
     @GetMapping
-    public ResponseEntity<List<TransferSummary>> listAll() {
-        return ResponseEntity.ok(queryService.listAll());
+    public ResponseEntity<TransferListPage> listAll(
+            @RequestParam(required = false) Integer page,
+            @RequestParam(required = false) Integer size) {
+        int p = TransferListPaging.clampPage(page);
+        int s = TransferListPaging.clampSize(size);
+        return ResponseEntity.ok(queryService.listPage(p, s));
     }
 
     @GetMapping("/single/{id}")
@@ -159,10 +168,27 @@ public class TransferManagementController {
             action.run();
             return ResponseEntity.ok().build();
         } catch (FileTransferException e) {
+            if (FileTransferErrorRule.isTargetUnreachable(e)
+                    || (e.getMessage() != null && e.getMessage().contains("Cannot reach target"))) {
+                throw new TransferProtocolException(
+                        FileTransferErrorRule.TARGET_UNREACHABLE,
+                        FileTransferErrorRule.TARGET_UNREACHABLE_MESSAGE,
+                        HttpStatus.SERVICE_UNAVAILABLE,
+                        e);
+            }
             String msg = e.getMessage() != null ? e.getMessage() : "";
-            if (msg.contains("Cannot reach target")) return ResponseEntity.status(503).build();
-            if (msg.contains("not paused"))          return ResponseEntity.status(409).build();
-            return ResponseEntity.badRequest().build();
+            if (msg.contains("not paused")) {
+                throw new TransferProtocolException(
+                        "NOT_PAUSED",
+                        "Transfer is not paused",
+                        HttpStatus.CONFLICT,
+                        e);
+            }
+            throw new TransferProtocolException(
+                    "RESUME_FAILED",
+                    "Resume failed",
+                    HttpStatus.BAD_REQUEST,
+                    e);
         }
     }
 }

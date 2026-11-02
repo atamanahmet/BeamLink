@@ -2,21 +2,19 @@ package com.atamanahmet.beamlink.nexus.service;
 
 import com.atamanahmet.beamlink.nexus.config.NexusConfig;
 import com.atamanahmet.beamlink.nexus.domain.FileTransfer;
+import com.atamanahmet.beamlink.nexus.domain.enums.TransferStatus;
 import com.atamanahmet.beamlink.nexus.dto.InitiateBatchTransferRequest;
 import com.atamanahmet.beamlink.nexus.dto.InitiateBatchTransferResponse;
 import com.atamanahmet.beamlink.nexus.dto.ReceiveBatchRequest;
 import com.atamanahmet.beamlink.nexus.exception.FileTransferException;
-import com.atamanahmet.beamlink.nexus.http.HttpSender;
+import com.atamanahmet.beamlink.nexus.exception.TransferProtocolException;
+import com.atamanahmet.beamlink.nexus.http.TransferHttpClient;
 import com.atamanahmet.beamlink.nexus.util.PathNormalizer;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
 import java.io.IOException;
-import java.net.URI;
-import java.net.http.HttpRequest;
-import java.net.http.HttpResponse;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
@@ -33,24 +31,30 @@ public class BatchSenderService {
     private final BatchTransferService batchTransferService;
     private final NexusConfig nexusConfig;
     private final GroupTransferAsyncSender groupTransferAsyncSender;
-    private final ObjectMapper objectMapper;
     private final NexusService nexusService;
-    private final HttpSender httpSender;
+    private final TransferHttpClient transferHttpClient;
 
+    /**
+     * Starts a batch send. Unreachable target is stored as FAILED.
+     */
     public InitiateBatchTransferResponse initiate(InitiateBatchTransferRequest request) {
         if (request.getFilePaths() == null || request.getFilePaths().isEmpty()) {
             throw new FileTransferException("No file paths provided for batch transfer", null);
         }
 
-        List<ValidatedFile> validatedFiles = validateFiles(request.getFilePaths());
+        ValidatedList validated = validateFiles(request.getFilePaths());
+        List<ValidatedFile> validatedFiles = validated.files();
+        if (validatedFiles.isEmpty()) {
+            return new InitiateBatchTransferResponse(null, validated.skipped());
+        }
         UUID batchTransferId = UUID.randomUUID();
-        UUID sourceAgentId = nexusService.getNexusId();
+        UUID sourceDeviceId = nexusService.getNexusId();
         long totalSize = validatedFiles.stream().mapToLong(vf -> vf.fileSize).sum();
 
         batchTransferService.create(
                 batchTransferId,
-                sourceAgentId,
-                request.getTargetAgentId(),
+                sourceDeviceId,
+                request.getTargetDeviceId(),
                 request.getTargetIp(),
                 request.getTargetPort(),
                 validatedFiles.size(),
@@ -66,8 +70,8 @@ public class BatchSenderService {
 
             FileTransfer ft = FileTransfer.initiate(
                     transferId,
-                    sourceAgentId,
-                    request.getTargetAgentId(),
+                    sourceDeviceId,
+                    request.getTargetDeviceId(),
                     vf.path.getFileName().toString(),
                     vf.path.toString(),
                     vf.fileSize
@@ -86,7 +90,28 @@ public class BatchSenderService {
         }
 
         batchTransferService.saveChildren(fileTransfers);
-        registerOnTarget(request, batchTransferId, sourceAgentId, validatedFiles.size(), totalSize, fileEntries);
+        try {
+            transferHttpClient.registerBatch(
+                    request.getTargetIp(),
+                    request.getTargetPort(),
+                    batchTransferId,
+                    sourceDeviceId,
+                    request.getDispatchId(),
+                    validatedFiles.size(),
+                    totalSize,
+                    fileEntries);
+        } catch (TransferProtocolException e) {
+            if (RegisterRejectRule.keepFailed(e.getCode())) {
+                failBatchRegister(fileTransfers, batchTransferId, e.getMessage());
+            }
+            throw e;
+        } catch (FileTransferException e) {
+            if (FileTransferErrorRule.isTargetUnreachable(e)) {
+                failBatchRegister(
+                        fileTransfers, batchTransferId, FileTransferErrorRule.TARGET_UNREACHABLE_MESSAGE);
+            }
+            throw e;
+        }
         batchTransferService.markActive(batchTransferId);
 
         GroupTransferContext ctx = new GroupTransferContext(
@@ -98,9 +123,9 @@ public class BatchSenderService {
         groupTransferAsyncSender.sendAsync(ctx);
 
         log.info("Batch transfer initiated: {} files → {} ({})",
-                validatedFiles.size(), request.getTargetAgentId(), batchTransferId);
+                validatedFiles.size(), request.getTargetDeviceId(), batchTransferId);
 
-        return new InitiateBatchTransferResponse(batchTransferId);
+        return new InitiateBatchTransferResponse(batchTransferId, validated.skipped());
     }
 
     public void resume(UUID batchTransferId) {
@@ -120,8 +145,9 @@ public class BatchSenderService {
         groupTransferAsyncSender.sendAsync(ctx);
     }
 
-    private List<ValidatedFile> validateFiles(List<String> filePaths) {
+    private ValidatedList validateFiles(List<String> filePaths) {
         List<ValidatedFile> result = new ArrayList<>();
+        int skipped = 0;
 
         for (String raw : filePaths) {
             String cleaned = PathNormalizer.normalize(raw);
@@ -131,57 +157,39 @@ public class BatchSenderService {
                 throw new FileTransferException("File not found: " + cleaned, null);
             }
 
-            if (!Files.isReadable(path)) {
-                throw new FileTransferException("File not readable: " + cleaned, null);
+            if (SkipSourceEntryRule.shouldSkip(path)) {
+                skipped++;
+                continue;
             }
 
             long size;
             try {
                 size = Files.size(path);
             } catch (IOException e) {
-                throw new FileTransferException("Cannot read file size: " + cleaned, e);
+                skipped++;
+                continue;
             }
 
             result.add(new ValidatedFile(path, size));
         }
 
-        return result;
+        return new ValidatedList(result, skipped);
     }
 
-    private void registerOnTarget(
-            InitiateBatchTransferRequest request,
-            UUID batchTransferId,
-            UUID sourceAgentId,
-            int totalFiles,
-            long totalSize,
-            List<ReceiveBatchRequest.FileEntry> fileEntries
-    ) {
-        ReceiveBatchRequest payload = new ReceiveBatchRequest();
-        payload.setBatchTransferId(batchTransferId);
-        payload.setDispatchId(request.getDispatchId());
-        payload.setSourceAgentId(sourceAgentId);
-        payload.setTotalFiles(totalFiles);
-        payload.setTotalSize(totalSize);
-        payload.setFiles(fileEntries);
-
-        try {
-            String body = objectMapper.writeValueAsString(payload);
-            HttpRequest httpRequest = HttpRequest.newBuilder()
-                    .uri(URI.create("http://" + request.getTargetIp() + ":" + request.getTargetPort() + "/api/transfers/receive-batch"))
-                    .header("Content-Type", "application/json")
-                    .POST(HttpRequest.BodyPublishers.ofString(body))
-                    .build();
-
-            HttpResponse<String> response = httpSender.send(httpRequest);
-            if (response.statusCode() != 200) {
-                throw new FileTransferException("Target rejected batch registration. Status: " + response.statusCode(), null);
-            }
-        } catch (FileTransferException e) {
-            throw e;
-        } catch (InterruptedException | IOException e) {
-            throw new FileTransferException("Cannot reach target agent", e);
+    /**
+     * Marks the batch and children FAILED so the UI can show the peer message.
+     */
+    private void failBatchRegister(
+            List<FileTransfer> fileTransfers, UUID batchTransferId, String reason) {
+        for (FileTransfer ft : fileTransfers) {
+            ft.setStatus(TransferStatus.FAILED);
+            ft.setFailureReason(reason);
         }
+        batchTransferService.saveChildren(fileTransfers);
+        batchTransferService.markFailed(batchTransferId);
     }
 
     private record ValidatedFile(Path path, long fileSize) {}
+
+    private record ValidatedList(List<ValidatedFile> files, int skipped) {}
 }

@@ -1,7 +1,7 @@
 package com.atamanahmet.beamlink.nexus.websocket;
 
 import com.atamanahmet.beamlink.nexus.websocket.enums.WsMessageType;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
@@ -46,6 +46,22 @@ public class NexusUiWebSocketHandler implements WebSocketHandler {
     @Override
     public boolean supportsPartialMessages() {
         return false;
+    }
+
+    /**
+     * Closes every UI WS session.
+     */
+    public void closeAllSessions() {
+        for (WebSocketSession session : uiSessions) {
+            if (session.isOpen()) {
+                try {
+                    session.close(CloseStatus.GOING_AWAY);
+                } catch (IOException ignored) {
+                }
+            }
+        }
+        uiSessions.clear();
+        log.info("All UI WS sessions closed.");
     }
 
     /**

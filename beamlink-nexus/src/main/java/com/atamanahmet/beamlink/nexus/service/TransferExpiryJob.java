@@ -3,7 +3,6 @@ package com.atamanahmet.beamlink.nexus.service;
 import com.atamanahmet.beamlink.nexus.config.NexusConfig;
 import com.atamanahmet.beamlink.nexus.domain.FileTransfer;
 import com.atamanahmet.beamlink.nexus.domain.enums.TransferStatus;
-import com.atamanahmet.beamlink.nexus.repository.FileTransferRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.slf4j.Logger;
@@ -24,7 +23,7 @@ import java.util.List;
 @RequiredArgsConstructor
 public class TransferExpiryJob {
 
-    private final FileTransferRepository transferRepository;
+    private final FileTransferService fileTransferService;
     private final NexusConfig nexusConfig;
     private final StorageService storageService;
     private final ChunkReceiverService chunkReceiverService;
@@ -34,17 +33,17 @@ public class TransferExpiryJob {
     public void expireStaleTransfers() {
         Instant now = Instant.now();
         List<FileTransfer> stale = new ArrayList<>();
-        stale.addAll(this.transferRepository.findByStatusAndExpiresAtBefore(TransferStatus.ACTIVE, now));
-        stale.addAll(this.transferRepository.findByStatusAndExpiresAtBefore(TransferStatus.PAUSED, now));
+        stale.addAll(this.fileTransferService.findByStatusAndExpiresAtBefore(TransferStatus.ACTIVE, now));
+        stale.addAll(this.fileTransferService.findByStatusAndExpiresAtBefore(TransferStatus.PAUSED, now));
         if (!stale.isEmpty()) {
             for(FileTransfer transfer : stale) {
                 transfer.setStatus(TransferStatus.EXPIRED);
                 chunkReceiverService.onReceiveExpired(transfer.getTransferId());
-                this.storageService.deletePartialFile(transfer.getFileName());
+                this.storageService.deletePartialFile(transfer);
                 log.info("Transfer expired: {} ({})", transfer.getFileName(), transfer.getTransferId());
             }
 
-            this.transferRepository.saveAll(stale);
+            this.fileTransferService.saveAll(stale);
         }
     }
 }

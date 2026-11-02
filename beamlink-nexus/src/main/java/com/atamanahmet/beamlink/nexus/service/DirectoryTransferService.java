@@ -6,13 +6,13 @@ import com.atamanahmet.beamlink.nexus.domain.enums.GroupTransferStatus;
 import com.atamanahmet.beamlink.nexus.domain.enums.TransferStatus;
 import com.atamanahmet.beamlink.nexus.exception.FileTransferException;
 import com.atamanahmet.beamlink.nexus.repository.DirectoryTransferRepository;
-import com.atamanahmet.beamlink.nexus.repository.FileTransferRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 
 @Service
@@ -20,12 +20,12 @@ import java.util.UUID;
 public class DirectoryTransferService implements GroupTransferService {
 
     private final DirectoryTransferRepository directoryTransferRepository;
-    private final FileTransferRepository fileTransferRepository;
+    private final FileTransferService fileTransferService;
 
     public DirectoryTransfer create(
             UUID directoryTransferId,
-            UUID sourceAgentId,
-            UUID targetAgentId,
+            UUID sourceDeviceId,
+            UUID targetDeviceId,
             String targetIp,
             int targetPort,
             String directoryName,
@@ -36,10 +36,14 @@ public class DirectoryTransferService implements GroupTransferService {
             UUID dispatchId
     ) {
         DirectoryTransfer dt = DirectoryTransfer.initiate(
-                directoryTransferId, dispatchId, sourceAgentId, targetAgentId,
+                directoryTransferId, dispatchId, sourceDeviceId, targetDeviceId,
                 targetIp, targetPort, directoryName, sourcePath,
                 totalFiles, totalSize, emptyDirectories);
         return directoryTransferRepository.save(dt);
+    }
+
+    public Optional<DirectoryTransfer> findById(UUID directoryTransferId) {
+        return directoryTransferRepository.findById(directoryTransferId);
     }
 
     public DirectoryTransfer get(UUID directoryTransferId) {
@@ -49,8 +53,31 @@ public class DirectoryTransferService implements GroupTransferService {
                         "Directory transfer not found: " + directoryTransferId, null));
     }
 
+    public DirectoryTransfer save(DirectoryTransfer directoryTransfer) {
+        return directoryTransferRepository.save(directoryTransfer);
+    }
+
+    public void delete(DirectoryTransfer directoryTransfer) {
+        directoryTransferRepository.delete(directoryTransfer);
+    }
+
+    public List<DirectoryTransfer> findAll() {
+        return directoryTransferRepository.findAll();
+    }
+
     public List<DirectoryTransfer> getAll() {
         return directoryTransferRepository.findAllByOrderByCreatedAtDesc();
+    }
+
+    /**
+     * Deletes every directory transfer row.
+     */
+    public void deleteAll() {
+        directoryTransferRepository.deleteAll();
+    }
+
+    public long countByStatus(GroupTransferStatus status) {
+        return directoryTransferRepository.countByStatus(status);
     }
 
     @Override
@@ -67,7 +94,7 @@ public class DirectoryTransferService implements GroupTransferService {
     @Override
     public List<FileTransfer> getOrderedQueue(UUID groupId) {
         List<FileTransfer> children =
-                fileTransferRepository.findByDirectoryTransferId(groupId);
+                fileTransferService.findByDirectoryTransferId(groupId);
 
         List<FileTransfer> queue = new ArrayList<>();
         children.stream()
@@ -82,7 +109,7 @@ public class DirectoryTransferService implements GroupTransferService {
 
     @Override
     public List<FileTransfer> getAllChildren(UUID groupId) {
-        return fileTransferRepository.findByDirectoryTransferId(groupId);
+        return fileTransferService.findByDirectoryTransferId(groupId);
     }
 
     @Override
@@ -134,6 +161,6 @@ public class DirectoryTransferService implements GroupTransferService {
     }
 
     public void saveChildren(List<FileTransfer> fileTransfers) {
-        fileTransferRepository.saveAll(fileTransfers);
+        fileTransferService.saveAll(fileTransfers);
     }
 }

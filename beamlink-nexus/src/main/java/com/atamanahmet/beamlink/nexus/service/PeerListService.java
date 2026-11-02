@@ -2,7 +2,6 @@ package com.atamanahmet.beamlink.nexus.service;
 
 import com.atamanahmet.beamlink.nexus.domain.PeerListVersion;
 import com.atamanahmet.beamlink.nexus.repository.PeerListVersionRepository;
-import jakarta.annotation.PostConstruct;
 import jakarta.transaction.Transactional;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -29,6 +28,18 @@ public class PeerListService {
 
     public long getCurrentVersion() {
         return this.cachedVersion;
+    }
+
+    /**
+     * Sets the peer list version back to 1.
+     */
+    @Transactional
+    public void resetVersion() {
+        PeerListVersion peerListVersion = this.peerListVersionRepository.findById(1)
+                .orElseGet(this::createInitialVersion);
+        peerListVersion.setVersion(1L);
+        this.peerListVersionRepository.save(peerListVersion);
+        this.cachedVersion = 1L;
     }
 
     private PeerListVersion createInitialVersion() {

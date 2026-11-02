@@ -1,13 +1,14 @@
 package com.atamanahmet.beamlink.nexus.controller;
 
-import com.atamanahmet.beamlink.nexus.domain.Agent;
-import com.atamanahmet.beamlink.nexus.domain.enums.AgentState;
-import com.atamanahmet.beamlink.nexus.dto.AgentDTO;
+import com.atamanahmet.beamlink.nexus.domain.Device;
+import com.atamanahmet.beamlink.nexus.domain.enums.DeviceState;
+import com.atamanahmet.beamlink.nexus.dto.DeviceDTO;
 import com.atamanahmet.beamlink.nexus.dto.PeerDTO;
 import com.atamanahmet.beamlink.nexus.dto.PeerListResponse;
-import com.atamanahmet.beamlink.nexus.mapper.AgentMapper;
+import com.atamanahmet.beamlink.nexus.dto.PeerSummaryResponse;
+import com.atamanahmet.beamlink.nexus.mapper.DeviceMapper;
 import com.atamanahmet.beamlink.nexus.mapper.PeerMapper;
-import com.atamanahmet.beamlink.nexus.service.AgentService;
+import com.atamanahmet.beamlink.nexus.service.DeviceService;
 import com.atamanahmet.beamlink.nexus.service.PeerListService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
@@ -24,25 +25,46 @@ import java.util.UUID;
 public class PeerController {
 
         private final PeerListService peerListService;
-        private final AgentService agentService;
-        private final AgentMapper agentMapper;
+        private final DeviceService deviceService;
+        private final DeviceMapper deviceMapper;
         private final PeerMapper peerMapper;
 
+        /**
+         * Online peers for devices. PeerDTO only.
+         */
         @GetMapping("/online")
-        public ResponseEntity<List<AgentDTO>> getOnlinePeers(@RequestParam(required = false) UUID excludeAgentId) {
-                return ResponseEntity.ok(agentService.getOnlineAgentsExcluding(excludeAgentId));
+        public ResponseEntity<List<PeerDTO>> getOnlinePeers(
+                        @RequestParam(required = false) UUID excludeDeviceId) {
+                List<PeerDTO> peers = deviceService.getOnlineDevices().stream()
+                                .filter(a -> excludeDeviceId == null || !a.getId().equals(excludeDeviceId))
+                                .map(peerMapper::fromDevice)
+                                .toList();
+                return ResponseEntity.ok(peers);
+        }
+
+        /**
+         * Slim peer list for nexus UI. No tokens or sync fields.
+         */
+        @GetMapping("/summary")
+        public ResponseEntity<List<PeerSummaryResponse>> getPeerSummaries() {
+                List<PeerSummaryResponse> peers = new ArrayList<>();
+                peers.add(peerMapper.nexusPeerSummary());
+                deviceService.getDevicesByState(DeviceState.APPROVED).stream()
+                        .map(PeerMapper::toSummary)
+                        .forEach(peers::add);
+                return ResponseEntity.ok(peers);
         }
 
         @GetMapping
-        public ResponseEntity<PeerListResponse> getAllPeers(@RequestParam(required = false) UUID excludeAgentId) {
-                List<Agent> agents = agentService.getAgentsByState(AgentState.APPROVED).stream()
-                        .filter(a -> !a.getId().equals(excludeAgentId))
+        public ResponseEntity<PeerListResponse> getAllPeers(@RequestParam(required = false) UUID excludeDeviceId) {
+                List<Device> devices = deviceService.getDevicesByState(DeviceState.APPROVED).stream()
+                        .filter(a -> !a.getId().equals(excludeDeviceId))
                         .toList();
 
                 List<PeerDTO> peers = new ArrayList<>();
                 peers.add(peerMapper.nexusPeer());
-                agents.stream()
-                        .map(peerMapper::fromAgent)
+                devices.stream()
+                        .map(peerMapper::fromDevice)
                         .forEach(peers::add);
 
                 return ResponseEntity.ok(
@@ -53,10 +75,10 @@ public class PeerController {
                 );
         }
 
-        @GetMapping("/{agentId}/address")
-        public ResponseEntity<Map<String, Object>> getAgentAddress(@PathVariable UUID agentId) {
-                AgentDTO agent = agentMapper.toDTO(agentService.findByAgentId(agentId));
-                return ResponseEntity.ok(Map.of("ip", agent.getIpAddress(), "port", agent.getPort()));
+        @GetMapping("/{deviceId}/address")
+        public ResponseEntity<Map<String, Object>> getDeviceAddress(@PathVariable UUID deviceId) {
+                DeviceDTO device = deviceMapper.toDTO(deviceService.findByDeviceId(deviceId));
+                return ResponseEntity.ok(Map.of("ip", device.getIpAddress(), "port", device.getPort()));
         }
 
         @GetMapping("/version")

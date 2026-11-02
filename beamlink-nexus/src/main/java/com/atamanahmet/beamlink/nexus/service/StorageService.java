@@ -1,7 +1,6 @@
 package com.atamanahmet.beamlink.nexus.service;
 
 import com.atamanahmet.beamlink.nexus.config.StorageConfig;
-import com.atamanahmet.beamlink.nexus.config.TransferProperties;
 import com.atamanahmet.beamlink.nexus.domain.FileTransfer;
 import com.atamanahmet.beamlink.nexus.domain.enums.SettingKey;
 import com.atamanahmet.beamlink.nexus.exception.InsufficientDiskSpaceException;
@@ -11,7 +10,9 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
-import java.io.*;
+import java.io.IOException;
+import java.io.RandomAccessFile;
+import java.nio.file.AtomicMoveNotSupportedException;
 import java.nio.file.FileStore;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -22,30 +23,26 @@ import java.nio.file.StandardCopyOption;
 @RequiredArgsConstructor
 public class StorageService {
 
+    static final String PARTIAL_DIR_NAME = ".beamlink-partial";
+
     private final StorageConfig storageConfig;
     private final SettingsService settingsService;
-    private final TransferProperties transferProperties;
-    private static final long DISK_BUFFER_BYTES = 100L * 1024 * 1024;
 
     @Getter
     private Path uploadsDir;
 
-    @Getter
-    private Path tempDir;
-
     @PostConstruct
     public void init() {
         this.uploadsDir = resolveUploadsDir();
-        this.tempDir = resolveTempDir();
-
         createDirectory(this.uploadsDir);
-        createDirectory(this.tempDir);
+        ensurePartialDir();
     }
 
     public void updateUploadsDir(Path newPath) {
         createDirectory(newPath);
         settingsService.set(SettingKey.STORAGE_UPLOAD_DIR, newPath.toString());
         this.uploadsDir = newPath;
+        ensurePartialDir();
         log.info("Uploads directory updated to: {}", newPath);
     }
 
@@ -64,22 +61,46 @@ public class StorageService {
     }
 
     /**
-     * Resolves temp directory from DB if configured, falls back to default.
-     * DB-based configuration not yet exposed via admin API, will fall back
-     * to StorageConfig default until a STORAGE_TEMP_DIR setting is persisted.
+     * Hidden folder inside the upload directory for PARTIAL files.
      */
-    private Path resolveTempDir() {
-        return settingsService.get(SettingKey.STORAGE_TEMP_DIR)
-                .map(Path::of)
-                .orElseGet(() -> {
-                    Path fallback = storageConfig.getDefaultTempDir();
-                    log.warn("No temp directory configured in DB, using default: {}", fallback);
-                    return fallback;
-                });
+    public Path getPartialDir() {
+        return uploadsDir.resolve(PARTIAL_DIR_NAME);
+    }
+
+    /**
+     * Creates the hidden partial folder and marks it hidden on Windows.
+     */
+    public void ensurePartialDir() {
+        Path dir = getPartialDir();
+        createDirectory(dir);
+        hideWindows(dir);
+    }
+
+    /**
+     * Sets the Windows hidden attribute. No-op on other volumes.
+     */
+    private void hideWindows(Path dir) {
+        try {
+            Files.setAttribute(dir, "dos:hidden", true);
+        } catch (UnsupportedOperationException | IOException e) {
+            log.debug("Could not hide partial dir {}: {}", dir, e.getMessage());
+        }
     }
 
     public Path resolvePartialPath(String fileName) {
-        return tempDir.resolve(fileName + ".part");
+        ensurePartialDir();
+        return getPartialDir().resolve(fileName + ".part");
+    }
+
+    /**
+     * Stored receive path when set, else the current hidden-folder path.
+     */
+    public Path storedPartialPath(FileTransfer transfer) {
+        String stored = transfer.getFilePath();
+        if (stored != null && !stored.isBlank()) {
+            return Path.of(stored);
+        }
+        return resolvePartialPath(transfer.getFileName());
     }
 
     public void allocatePartialFile(Path path, long size) {
@@ -93,27 +114,11 @@ public class StorageService {
         }
     }
 
-    /** Writes chunk at offset, returns bytes written. */
-    public long writeChunk(Path path, long offset, InputStream stream) {
-        long bytesWritten = 0;
-        byte[] buffer = new byte[transferProperties.getChunkSizeBytes()];
-
-        try (RandomAccessFile raf = new RandomAccessFile(path.toFile(), "rw")) {
-            raf.seek(offset);
-            int bytesRead;
-            while ((bytesRead = stream.read(buffer)) != -1) {
-                raf.write(buffer, 0, bytesRead);
-                bytesWritten += bytesRead;
-            }
-        } catch (IOException e) {
-            throw new IllegalStateException("Failed to write chunk at offset " + offset, e);
-        }
-
-        return bytesWritten;
-    }
-
+    /**
+     * Atomic same-volume rename. Never copies.
+     */
     public void moveToFinalLocation(FileTransfer transfer) {
-        Path partialFile = resolvePartialPath(transfer.getFileName());
+        Path partialFile = storedPartialPath(transfer);
 
         Path finalPath;
         if (transfer.getRelativePath() != null && transfer.getDirectoryName() != null) {
@@ -126,7 +131,14 @@ public class StorageService {
 
         try {
             Files.createDirectories(finalPath.getParent());
-            Files.move(partialFile, finalPath, StandardCopyOption.REPLACE_EXISTING);
+            if (Files.exists(finalPath)) {
+                Files.delete(finalPath);
+            }
+            Files.move(partialFile, finalPath, StandardCopyOption.ATOMIC_MOVE);
+        } catch (AtomicMoveNotSupportedException e) {
+            throw new IllegalStateException(
+                    "Atomic move is not supported on this volume. Keep the upload directory on the same volume as the partial file.",
+                    e);
         } catch (IOException e) {
             throw new IllegalStateException("Failed to move completed file to upload directory", e);
         }
@@ -141,65 +153,46 @@ public class StorageService {
     }
 
     /**
-     * Writes a full stream to a temp file, then atomically moves it to uploads.
-     * Returns bytes written.
+     * Deletes the stored partial path for this row.
      */
-    public long receiveFileStream(InputStream inputStream, String filename, long fileSize) {
-        checkDiskSpace(fileSize);
-
-        Path tmpPath   = tempDir.resolve(filename + ".tmp");
-        Path finalPath = uploadsDir.resolve(filename);
-
-        long bytesWritten = 0;
-        byte[] buffer = new byte[transferProperties.getChunkSizeBytes()];
-
-        try (BufferedOutputStream out = new BufferedOutputStream(
-                new FileOutputStream(tmpPath.toFile()), transferProperties.getChunkSizeBytes())) {
-            int bytesRead;
-            while ((bytesRead = inputStream.read(buffer)) != -1) {
-                out.write(buffer, 0, bytesRead);
-                bytesWritten += bytesRead;
-            }
-            out.flush();
-        } catch (IOException e) {
-            deleteQuietly(tmpPath);
-            if (e.getMessage() != null && e.getMessage().toLowerCase().contains("no space left")) {
-                throw new InsufficientDiskSpaceException("No space left on device");
-            }
-            throw new IllegalStateException("Failed to write file to disk", e);
-        }
-
+    public void deletePartialFile(FileTransfer transfer) {
         try {
-            Files.move(tmpPath, finalPath,
-                    StandardCopyOption.ATOMIC_MOVE,
-                    StandardCopyOption.REPLACE_EXISTING);
+            Files.deleteIfExists(storedPartialPath(transfer));
         } catch (IOException e) {
-            deleteQuietly(tmpPath);
-            throw new IllegalStateException("Failed to finalize file after transfer", e);
+            log.warn("Could not delete partial file for: {}", transfer.getFileName());
         }
-
-        return bytesWritten;
     }
 
-    public void checkDiskSpace(long requiredBytes) {
+    /**
+     * Usable bytes on the upload directory volume.
+     */
+    public long usableBytes() {
         try {
             FileStore store = Files.getFileStore(uploadsDir);
-            long usable = store.getUsableSpace();
-            long required = requiredBytes + DISK_BUFFER_BYTES;
-            if (usable < required) {
-                throw new InsufficientDiskSpaceException(
-                        String.format("Insufficient disk space. Required: %d MB, Available: %d MB",
-                                required / (1024 * 1024),
-                                usable / (1024 * 1024))
-                );
-            }
-        } catch (InsufficientDiskSpaceException e) {
-            throw e;
+            return store.getUsableSpace();
         } catch (IOException e) {
-            log.warn("Unable to check disk space: {}", e.getMessage());
+            log.warn("Unable to read usable space: {}", e.getMessage());
+            return 0L;
         }
     }
 
+    /**
+     * Throws when free space on the receive volume is below requiredBytes.
+     */
+    public void checkDiskSpace(long requiredBytes) {
+        long usable = usableBytes();
+        if (usable < requiredBytes) {
+            throw new InsufficientDiskSpaceException(
+                    String.format("Insufficient disk space. Required: %d MB, Available: %d MB",
+                            requiredBytes / (1024 * 1024),
+                            usable / (1024 * 1024))
+            );
+        }
+    }
+
+    /**
+     * True when the receive volume has enough free bytes.
+     */
     public boolean checkDiskSpaceAvailable(long requiredBytes) {
         try {
             checkDiskSpace(requiredBytes);
@@ -215,14 +208,6 @@ public class StorageService {
             Files.createDirectories(path);
         } catch (IOException e) {
             throw new IllegalStateException("Cannot create directory: " + path, e);
-        }
-    }
-
-    private void deleteQuietly(Path path) {
-        try {
-            Files.deleteIfExists(path);
-        } catch (IOException e) {
-            log.warn("Failed to delete file: {}", path);
         }
     }
 }

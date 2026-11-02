@@ -7,11 +7,10 @@ import com.atamanahmet.beamlink.nexus.domain.enums.GroupTransferStatus;
 import com.atamanahmet.beamlink.nexus.domain.enums.PauseOwner;
 import com.atamanahmet.beamlink.nexus.domain.enums.TransferStatus;
 import com.atamanahmet.beamlink.nexus.exception.FileTransferException;
+import com.atamanahmet.beamlink.nexus.exception.InsufficientDiskException;
+import com.atamanahmet.beamlink.nexus.exception.InvalidRequestException;
 import com.atamanahmet.beamlink.nexus.exception.TransferProtocolException;
 import com.atamanahmet.beamlink.nexus.http.TransferHttpClient;
-import com.atamanahmet.beamlink.nexus.repository.BatchTransferRepository;
-import com.atamanahmet.beamlink.nexus.repository.DirectoryTransferRepository;
-import com.atamanahmet.beamlink.nexus.repository.FileTransferRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
@@ -29,9 +28,9 @@ public class TransferManagementService {
     private final TransferSenderService transferSenderService;
     private final BatchSenderService batchSenderService;
     private final DirectorySenderService directorySenderService;
-    private final BatchTransferRepository batchTransferRepository;
-    private final DirectoryTransferRepository directoryTransferRepository;
-    private final FileTransferRepository fileTransferRepository;
+    private final BatchTransferService batchTransferService;
+    private final DirectoryTransferService directoryTransferService;
+    private final FileTransferService fileTransferService;
     private final TransferSender asyncSender;
     private final TransferHttpClient transferHttpClient;
     private final NexusResumePolicyStore resumePolicyStore;
@@ -39,15 +38,17 @@ public class TransferManagementService {
     private final TransferSpeedLimiter transferSpeedLimiter;
     private final ChunkReceiverService chunkReceiverService;
     private final ReceiveStallTracker receiveStallTracker;
+    private final StorageService storageService;
+    private final DiskReserveProvider diskReserveProvider;
 
     public void pauseSingle(UUID id) {
-        FileTransfer ft = fileTransferRepository.findByTransferId(id)
+        FileTransfer ft = fileTransferService.findByTransferId(id)
                 .orElseThrow(() -> new FileTransferException("Transfer not found: " + id, null));
         pauseFileTransfer(ft);
     }
 
     public void resumeSingle(UUID id) {
-        FileTransfer ft = fileTransferRepository.findByTransferId(id)
+        FileTransfer ft = fileTransferService.findByTransferId(id)
                 .orElseThrow(() -> new FileTransferException("Transfer not found: " + id, null));
         resumeFileTransfer(ft);
     }
@@ -63,16 +64,16 @@ public class TransferManagementService {
                     "Speed limit must be null or a positive Mb/s value",
                     HttpStatus.BAD_REQUEST);
         }
-        FileTransfer ft = fileTransferRepository.findByTransferId(id)
+        FileTransfer ft = fileTransferService.findByTransferId(id)
                 .orElseThrow(() -> new FileTransferException("Transfer not found: " + id, null));
         ft.setSpeedLimitMbps(limitMbps);
-        fileTransferRepository.save(ft);
+        fileTransferService.save(ft);
         transferSpeedLimiter.clearTransfer(id);
     }
 
     public void cancelSingle(UUID id) {
         transferSenderService.cancel(id);
-        fileTransferRepository.findByTransferId(id).ifPresent(this::notifyPeerCancel);
+        fileTransferService.findByTransferId(id).ifPresent(this::notifyPeerCancel);
     }
 
     /**
@@ -80,24 +81,24 @@ public class TransferManagementService {
      */
     @Transactional
     public void cancelBatch(UUID id) {
-        BatchTransfer bt = batchTransferRepository.findById(id)
+        BatchTransfer bt = batchTransferService.findById(id)
                 .orElseThrow(() -> new FileTransferException("Batch not found: " + id, null));
 
-        fileTransferRepository.findByBatchTransferId(id)
+        fileTransferService.findByBatchTransferId(id)
                 .forEach(ft -> {
                     if (ft.getStatus() == TransferStatus.ACTIVE
                             || ft.getStatus() == TransferStatus.PAUSED) {
                         ft.setStatus(TransferStatus.CANCELLED);
                         ft.setPausedBy(null);
-                        fileTransferRepository.save(ft);
+                        fileTransferService.save(ft);
                     }
                     notifyPeerCancel(ft);
                 });
 
-        List<FileTransfer> children = fileTransferRepository.findByBatchTransferId(id);
+        List<FileTransfer> children = fileTransferService.findByBatchTransferId(id);
         bt.setStatus(GroupStatusRollup.fromChildren(
                 children.stream().map(FileTransfer::getStatus).toList()));
-        batchTransferRepository.save(bt);
+        batchTransferService.save(bt);
     }
 
     /**
@@ -105,24 +106,24 @@ public class TransferManagementService {
      */
     @Transactional
     public void cancelDirectory(UUID id) {
-        DirectoryTransfer dt = directoryTransferRepository.findById(id)
+        DirectoryTransfer dt = directoryTransferService.findById(id)
                 .orElseThrow(() -> new FileTransferException("Directory transfer not found: " + id, null));
 
-        fileTransferRepository.findByDirectoryTransferId(id)
+        fileTransferService.findByDirectoryTransferId(id)
                 .forEach(ft -> {
                     if (ft.getStatus() == TransferStatus.ACTIVE
                             || ft.getStatus() == TransferStatus.PAUSED) {
                         ft.setStatus(TransferStatus.CANCELLED);
                         ft.setPausedBy(null);
-                        fileTransferRepository.save(ft);
+                        fileTransferService.save(ft);
                     }
                     notifyPeerCancel(ft);
                 });
 
-        List<FileTransfer> children = fileTransferRepository.findByDirectoryTransferId(id);
+        List<FileTransfer> children = fileTransferService.findByDirectoryTransferId(id);
         dt.setStatus(GroupStatusRollup.fromChildren(
                 children.stream().map(FileTransfer::getStatus).toList()));
-        directoryTransferRepository.save(dt);
+        directoryTransferService.save(dt);
     }
 
     public void deleteSingle(UUID id) {
@@ -134,7 +135,7 @@ public class TransferManagementService {
      */
     @Transactional
     public void pauseBatch(UUID id) {
-        BatchTransfer bt = batchTransferRepository.findById(id)
+        BatchTransfer bt = batchTransferService.findById(id)
                 .orElseThrow(() -> new FileTransferException("Batch not found: " + id, null));
 
         if (bt.getStatus() == GroupTransferStatus.PAUSED) {
@@ -145,41 +146,44 @@ public class TransferManagementService {
         }
 
         PauseOwner side = sideResolver.resolve(
-                bt.getSourceAgentId(), bt.getTargetAgentId(), bt.getTargetIp());
+                bt.getSourceDeviceId(), bt.getTargetDeviceId(), bt.getTargetIp());
+        if (side == null) {
+            throw new IllegalArgumentException("pausedBy required");
+        }
         bt.setPausedBy(side);
 
-        fileTransferRepository.findByBatchTransferIdAndStatus(id, TransferStatus.ACTIVE)
+        fileTransferService.findByBatchTransferIdAndStatus(id, TransferStatus.ACTIVE)
                 .forEach(ft -> {
                     ft.setStatus(TransferStatus.PAUSED);
                     ft.setPausedBy(side);
-                    fileTransferRepository.save(ft);
+                    fileTransferService.save(ft);
                     chunkReceiverService.onReceivePaused(ft.getTransferId());
                     notifyPeerPause(ft, side);
                 });
 
-        List<FileTransfer> children = fileTransferRepository.findByBatchTransferId(id);
+        List<FileTransfer> children = fileTransferService.findByBatchTransferId(id);
         bt.setStatus(GroupStatusRollup.fromChildren(
                 children.stream().map(FileTransfer::getStatus).toList()));
-        batchTransferRepository.save(bt);
+        batchTransferService.save(bt);
     }
 
     public void resumeBatch(UUID id) {
-        BatchTransfer bt = batchTransferRepository.findById(id)
+        BatchTransfer bt = batchTransferService.findById(id)
                 .orElseThrow(() -> new FileTransferException("Batch not found: " + id, null));
         if (bt.getStatus() != GroupTransferStatus.PAUSED) {
             throw new FileTransferException("Batch is not paused: " + bt.getStatus(), null);
         }
         PauseOwner side = sideResolver.resolve(
-                bt.getSourceAgentId(), bt.getTargetAgentId(), bt.getTargetIp());
+                bt.getSourceDeviceId(), bt.getTargetDeviceId(), bt.getTargetIp());
         if (!ResumePolicy.canResume(resumePolicyStore.getMode(), side, bt.getPausedBy())) {
             throw resumeForbidden();
         }
         bt.setPausedBy(null);
-        batchTransferRepository.save(bt);
-        fileTransferRepository.findByBatchTransferIdAndStatus(id, TransferStatus.PAUSED)
+        batchTransferService.save(bt);
+        fileTransferService.findByBatchTransferIdAndStatus(id, TransferStatus.PAUSED)
                 .forEach(ft -> {
                     ft.setPausedBy(null);
-                    fileTransferRepository.save(ft);
+                    fileTransferService.save(ft);
                     notifyPeerResume(ft);
                 });
         batchSenderService.resume(id);
@@ -187,7 +191,7 @@ public class TransferManagementService {
 
     @Transactional
     public void deleteBatch(UUID id) {
-        BatchTransfer bt = batchTransferRepository.findById(id)
+        BatchTransfer bt = batchTransferService.findById(id)
                 .orElseThrow(() -> new FileTransferException("Batch not found: " + id, null));
 
         GroupTransferStatus s = bt.getStatus();
@@ -195,7 +199,7 @@ public class TransferManagementService {
             throw new FileTransferException("Cannot delete an in-progress batch", null);
         }
 
-        batchTransferRepository.delete(bt);
+        batchTransferService.delete(bt);
     }
 
     /**
@@ -203,7 +207,7 @@ public class TransferManagementService {
      */
     @Transactional
     public void pauseDirectory(UUID id) {
-        DirectoryTransfer dt = directoryTransferRepository.findById(id)
+        DirectoryTransfer dt = directoryTransferService.findById(id)
                 .orElseThrow(() -> new FileTransferException("Directory transfer not found: " + id, null));
 
         if (dt.getStatus() == GroupTransferStatus.PAUSED) {
@@ -214,42 +218,45 @@ public class TransferManagementService {
         }
 
         PauseOwner side = sideResolver.resolve(
-                dt.getSourceAgentId(), dt.getTargetAgentId(), dt.getTargetIp());
+                dt.getSourceDeviceId(), dt.getTargetDeviceId(), dt.getTargetIp());
+        if (side == null) {
+            throw new IllegalArgumentException("pausedBy required");
+        }
         dt.setPausedBy(side);
 
-        fileTransferRepository.findByDirectoryTransferIdAndStatus(id, TransferStatus.ACTIVE)
+        fileTransferService.findByDirectoryTransferIdAndStatus(id, TransferStatus.ACTIVE)
                 .forEach(ft -> {
                     ft.setStatus(TransferStatus.PAUSED);
                     ft.setPausedBy(side);
-                    fileTransferRepository.save(ft);
+                    fileTransferService.save(ft);
                     chunkReceiverService.onReceivePaused(ft.getTransferId());
                     notifyPeerPause(ft, side);
                 });
 
-        List<FileTransfer> children = fileTransferRepository.findByDirectoryTransferId(id);
+        List<FileTransfer> children = fileTransferService.findByDirectoryTransferId(id);
         dt.setStatus(GroupStatusRollup.fromChildren(
                 children.stream().map(FileTransfer::getStatus).toList()));
-        directoryTransferRepository.save(dt);
+        directoryTransferService.save(dt);
     }
 
     public void resumeDirectory(UUID id) {
-        DirectoryTransfer dt = directoryTransferRepository.findById(id)
+        DirectoryTransfer dt = directoryTransferService.findById(id)
                 .orElseThrow(() -> new FileTransferException("Directory transfer not found: " + id, null));
         if (dt.getStatus() != GroupTransferStatus.PAUSED) {
             throw new FileTransferException(
                     "Directory transfer is not paused: " + dt.getStatus(), null);
         }
         PauseOwner side = sideResolver.resolve(
-                dt.getSourceAgentId(), dt.getTargetAgentId(), dt.getTargetIp());
+                dt.getSourceDeviceId(), dt.getTargetDeviceId(), dt.getTargetIp());
         if (!ResumePolicy.canResume(resumePolicyStore.getMode(), side, dt.getPausedBy())) {
             throw resumeForbidden();
         }
         dt.setPausedBy(null);
-        directoryTransferRepository.save(dt);
-        fileTransferRepository.findByDirectoryTransferIdAndStatus(id, TransferStatus.PAUSED)
+        directoryTransferService.save(dt);
+        fileTransferService.findByDirectoryTransferIdAndStatus(id, TransferStatus.PAUSED)
                 .forEach(ft -> {
                     ft.setPausedBy(null);
-                    fileTransferRepository.save(ft);
+                    fileTransferService.save(ft);
                     notifyPeerResume(ft);
                 });
         directorySenderService.resume(id);
@@ -257,7 +264,7 @@ public class TransferManagementService {
 
     @Transactional
     public void deleteDirectory(UUID id) {
-        DirectoryTransfer dt = directoryTransferRepository.findById(id)
+        DirectoryTransfer dt = directoryTransferService.findById(id)
                 .orElseThrow(() -> new FileTransferException("Directory transfer not found: " + id, null));
 
         GroupTransferStatus s = dt.getStatus();
@@ -265,17 +272,30 @@ public class TransferManagementService {
             throw new FileTransferException("Cannot delete an in-progress directory transfer", null);
         }
 
-        directoryTransferRepository.delete(dt);
+        directoryTransferService.delete(dt);
     }
 
     /**
      * Applies pause from peer notify without echoing another notify.
      */
     public void applyPauseNotify(UUID transferId, PauseOwner pausedBy) {
-        fileTransferRepository.findByTransferId(transferId).ifPresent(ft -> {
+        applyPauseNotify(transferId, pausedBy, null);
+    }
+
+    /**
+     * Applies pause from peer notify without echoing another notify.
+     */
+    public void applyPauseNotify(UUID transferId, PauseOwner pausedBy, String reason) {
+        if (pausedBy == null) {
+            throw new InvalidRequestException("pausedBy required");
+        }
+        fileTransferService.findByTransferId(transferId).ifPresent(ft -> {
             ft.setStatus(TransferStatus.PAUSED);
             ft.setPausedBy(PausedByResolver.resolvePausedBy(ft.getPausedBy(), pausedBy));
-            fileTransferRepository.save(ft);
+            if (reason != null && !reason.isBlank()) {
+                ft.setFailureReason(reason);
+            }
+            fileTransferService.save(ft);
             chunkReceiverService.onReceivePaused(transferId);
         });
     }
@@ -284,12 +304,12 @@ public class TransferManagementService {
      * Applies resume from peer notify and restarts send when this node is source.
      */
     public void applyResumeNotify(UUID transferId) {
-        fileTransferRepository.findByTransferId(transferId).ifPresent(ft -> {
+        fileTransferService.findByTransferId(transferId).ifPresent(ft -> {
             ft.setPausedBy(null);
             ft.setStatus(TransferStatus.ACTIVE);
-            fileTransferRepository.save(ft);
+            fileTransferService.save(ft);
             PauseOwner side = sideResolver.resolve(
-                    ft.getSourceAgentId(), ft.getTargetAgentId(), ft.getTargetIp());
+                    ft.getSourceDeviceId(), ft.getTargetDeviceId(), ft.getTargetIp());
             if (side == PauseOwner.TARGET) {
                 receiveStallTracker.touch(ft.getTransferId());
             }
@@ -310,10 +330,13 @@ public class TransferManagementService {
                     "Transfer is not active: " + ft.getStatus(), null);
         }
         PauseOwner side = sideResolver.resolve(
-                ft.getSourceAgentId(), ft.getTargetAgentId(), ft.getTargetIp());
+                ft.getSourceDeviceId(), ft.getTargetDeviceId(), ft.getTargetIp());
+        if (side == null) {
+            throw new IllegalArgumentException("pausedBy required");
+        }
         ft.setStatus(TransferStatus.PAUSED);
         ft.setPausedBy(side);
-        fileTransferRepository.save(ft);
+        fileTransferService.save(ft);
         chunkReceiverService.onReceivePaused(ft.getTransferId());
         notifyPeerPause(ft, side);
     }
@@ -324,20 +347,33 @@ public class TransferManagementService {
                     "Transfer is not paused, current status: " + ft.getStatus(), null);
         }
         PauseOwner side = sideResolver.resolve(
-                ft.getSourceAgentId(), ft.getTargetAgentId(), ft.getTargetIp());
+                ft.getSourceDeviceId(), ft.getTargetDeviceId(), ft.getTargetIp());
         if (!ResumePolicy.canResume(resumePolicyStore.getMode(), side, ft.getPausedBy())) {
             throw resumeForbidden();
         }
         if (side == PauseOwner.TARGET) {
+            if (DiskReserveRule.CODE.equals(ft.getFailureReason())) {
+                long remaining = ft.getFileSize() - ft.getConfirmedOffset();
+                if (remaining < 0L) {
+                    remaining = 0L;
+                }
+                if (!DiskReserveRule.allowed(
+                        storageService.usableBytes(),
+                        remaining,
+                        diskReserveProvider.getBytes())) {
+                    throw new InsufficientDiskException();
+                }
+            }
             requestPeerResume(ft);
             ft.setPausedBy(null);
+            ft.setFailureReason(null);
             ft.setStatus(TransferStatus.ACTIVE);
-            fileTransferRepository.save(ft);
+            fileTransferService.save(ft);
             receiveStallTracker.touch(ft.getTransferId());
             return;
         }
         ft.setPausedBy(null);
-        fileTransferRepository.save(ft);
+        fileTransferService.save(ft);
         transferSenderService.resume(ft.getTransferId());
         notifyPeerResume(ft);
         if (ft.getTargetIp() != null && ft.getTargetPort() != null) {
@@ -384,7 +420,7 @@ public class TransferManagementService {
             return;
         }
         transferHttpClient.notifyPauseToPeer(
-                peer.ip(), peer.port(), ft.getTransferId(), pausedBy);
+                peer.ip(), peer.port(), ft.getTransferId(), pausedBy, ft.getFailureReason());
     }
 
     /**

@@ -3,16 +3,15 @@ package com.atamanahmet.beamlink.nexus.websocket.enums;
 public enum WsMessageType {
 
     /**
-     * Nexus to Agent
+     * Nexus to Device
      */
-    APPROVAL_PUSH,
     PEER_LIST_UPDATE,
-    AGENT_JOINED,
-    AGENT_OFFLINE,
+    DEVICE_JOINED,
+    DEVICE_OFFLINE,
     RENAME_PUSH,
 
     /**
-     * Agent to Nexus
+     * Device to Nexus
      */
     HEARTBEAT,
     LOG_SYNC,
@@ -24,7 +23,7 @@ public enum WsMessageType {
      */
     UI_PEER_LIST,
     UI_TRANSFER_PROGRESS,
-    UI_AGENT_STATUS,
+    UI_DEVICE_STATUS,
     UI_NOTIFICATION;
 
 }

@@ -4,6 +4,7 @@ import com.atamanahmet.beamlink.nexus.config.NexusConfig;
 import com.atamanahmet.beamlink.nexus.domain.DirectoryTransfer;
 import com.atamanahmet.beamlink.nexus.domain.FileTransfer;
 import com.atamanahmet.beamlink.nexus.domain.enums.GroupTransferStatus;
+import com.atamanahmet.beamlink.nexus.domain.enums.TransferStatus;
 import com.atamanahmet.beamlink.nexus.dto.InitiateDirectoryTransferRequest;
 import com.atamanahmet.beamlink.nexus.dto.InitiateDirectoryTransferResponse;
 import com.atamanahmet.beamlink.nexus.dto.ReceiveDirectoryRequest;
@@ -15,15 +16,19 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
 import java.io.IOException;
+import java.nio.file.FileVisitResult;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.nio.file.SimpleFileVisitor;
+import java.nio.file.attribute.BasicFileAttributes;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 import java.util.UUID;
-import java.util.stream.Stream;
 
 @Slf4j
 @Service
@@ -36,6 +41,9 @@ public class DirectorySenderService {
     private final NexusService nexusService;
     private final TransferHttpClient transferHttpClient;
 
+    /**
+     * Starts a directory send. Unreachable target is stored as FAILED.
+     */
     public InitiateDirectoryTransferResponse initiate(InitiateDirectoryTransferRequest request) {
         String cleanedPath = PathNormalizer.normalize(request.getSourcePath());
         Path sourceDir = Paths.get(cleanedPath);
@@ -43,16 +51,22 @@ public class DirectorySenderService {
         if (!Files.exists(sourceDir) || !Files.isDirectory(sourceDir)) {
             throw new FileTransferException("Directory not found: " + cleanedPath, null);
         }
+        if (SkipSourceEntryRule.shouldSkip(sourceDir)) {
+            return new InitiateDirectoryTransferResponse(null, 1);
+        }
 
         WalkResult walk = walkDirectory(sourceDir);
+        if (walk.files().isEmpty()) {
+            return new InitiateDirectoryTransferResponse(null, walk.skipped());
+        }
         UUID directoryTransferId = UUID.randomUUID();
-        UUID sourceAgentId = nexusService.getNexusId();
+        UUID sourceDeviceId = nexusService.getNexusId();
         String directoryName = sourceDir.getFileName().toString();
 
         directoryTransferService.create(
                 directoryTransferId,
-                sourceAgentId,
-                request.getTargetAgentId(),
+                sourceDeviceId,
+                request.getTargetDeviceId(),
                 request.getTargetIp(),
                 request.getTargetPort(),
                 directoryName,
@@ -73,8 +87,8 @@ public class DirectorySenderService {
 
             FileTransfer ft = FileTransfer.initiate(
                     transferId,
-                    sourceAgentId,
-                    request.getTargetAgentId(),
+                    sourceDeviceId,
+                    request.getTargetDeviceId(),
                     fileName,
                     entry.absolutePath().toString(),
                     entry.fileSize()
@@ -95,7 +109,15 @@ public class DirectorySenderService {
         }
 
         directoryTransferService.saveChildren(fileTransfers);
-        registerOnTarget(request, directoryTransferId, sourceAgentId, directoryName, walk, fileEntries);
+        try {
+            registerOnTarget(request, directoryTransferId, sourceDeviceId, directoryName, walk, fileEntries);
+        } catch (FileTransferException e) {
+            if (FileTransferErrorRule.isTargetUnreachable(e)) {
+                failDirectoryRegister(
+                        fileTransfers, directoryTransferId, FileTransferErrorRule.TARGET_UNREACHABLE_MESSAGE);
+            }
+            throw e;
+        }
         directoryTransferService.markActive(directoryTransferId);
 
         GroupTransferContext ctx = new GroupTransferContext(
@@ -107,9 +129,9 @@ public class DirectorySenderService {
         groupTransferAsyncSender.sendAsync(ctx);
 
         log.info("Directory transfer initiated: {} → {} ({})",
-                directoryName, request.getTargetAgentId(), directoryTransferId);
+                directoryName, request.getTargetDeviceId(), directoryTransferId);
 
-        return new InitiateDirectoryTransferResponse(directoryTransferId);
+        return new InitiateDirectoryTransferResponse(directoryTransferId, walk.skipped());
     }
 
     public void resume(UUID directoryTransferId) {
@@ -132,53 +154,104 @@ public class DirectorySenderService {
     private WalkResult walkDirectory(Path root) {
         List<WalkResult.FileEntry> files = new ArrayList<>();
         List<String> emptyDirectories = new ArrayList<>();
-        long totalSize = 0L;
+        Set<Path> dirsWithFiles = new HashSet<>();
+        Set<Path> skippedDirs = new HashSet<>();
+        long[] totalSize = {0L};
+        int[] skipped = {0};
 
-        try (Stream<Path> stream = Files.walk(root)) {
-            for (Path path : stream.sorted().toList()) {
-                if (path.equals(root)) continue;
-
-                if (Files.isDirectory(path)) {
-                    boolean hasFiles;
-                    try (Stream<Path> dirContents = Files.walk(path)) {
-                        hasFiles = dirContents
-                                .filter(p -> !p.equals(path))
-                                .anyMatch(Files::isRegularFile);
+        try {
+            Files.walkFileTree(root, new SimpleFileVisitor<Path>() {
+                @Override
+                public FileVisitResult preVisitDirectory(Path dir, BasicFileAttributes attrs) {
+                    if (dir.equals(root)) {
+                        return FileVisitResult.CONTINUE;
                     }
-                    if (!hasFiles) {
-                        emptyDirectories.add(root.relativize(path).toString());
+                    if (SkipSourceEntryRule.shouldSkip(dir)) {
+                        skipped[0]++;
+                        skippedDirs.add(dir);
+                        return FileVisitResult.SKIP_SUBTREE;
                     }
-                } else if (Files.isRegularFile(path)) {
-                    if (!Files.isReadable(path)) {
-                        throw new FileTransferException("File is not readable: " + path, null);
-                    }
-                    long size = Files.size(path);
-                    files.add(new WalkResult.FileEntry(path, size));
-                    totalSize += size;
+                    return FileVisitResult.CONTINUE;
                 }
-            }
+
+                @Override
+                public FileVisitResult visitFile(Path file, BasicFileAttributes attrs) {
+                    if (!attrs.isRegularFile() || SkipSourceEntryRule.shouldSkip(file)) {
+                        skipped[0]++;
+                        return FileVisitResult.CONTINUE;
+                    }
+                    try {
+                        long size = Files.size(file);
+                        files.add(new WalkResult.FileEntry(file, size));
+                        totalSize[0] += size;
+                        Path parent = file.getParent();
+                        while (parent != null && !parent.equals(root)) {
+                            dirsWithFiles.add(parent);
+                            parent = parent.getParent();
+                        }
+                    } catch (IOException e) {
+                        skipped[0]++;
+                    }
+                    return FileVisitResult.CONTINUE;
+                }
+
+                @Override
+                public FileVisitResult visitFileFailed(Path file, IOException exc) {
+                    skipped[0]++;
+                    return FileVisitResult.CONTINUE;
+                }
+
+                @Override
+                public FileVisitResult postVisitDirectory(Path dir, IOException exc) {
+                    if (exc != null) {
+                        skipped[0]++;
+                        return FileVisitResult.CONTINUE;
+                    }
+                    if (dir.equals(root) || skippedDirs.contains(dir)) {
+                        return FileVisitResult.CONTINUE;
+                    }
+                    if (!dirsWithFiles.contains(dir)) {
+                        emptyDirectories.add(root.relativize(dir).toString());
+                    }
+                    return FileVisitResult.CONTINUE;
+                }
+            });
         } catch (IOException e) {
             throw new FileTransferException("Failed to walk directory", e);
         }
 
-        if (files.isEmpty()) {
+        if (files.isEmpty() && skipped[0] == 0) {
             throw new FileTransferException("Directory contains no files to transfer", null);
         }
 
         return new WalkResult(
                 files,
                 emptyDirectories.isEmpty() ? Collections.emptyList() : emptyDirectories,
-                totalSize
+                totalSize[0],
+                skipped[0]
         );
     }
 
     /**
-     * Registers the directory payload on the target agent.
+     * Marks the directory and children FAILED so the UI can show the peer message.
+     */
+    private void failDirectoryRegister(
+            List<FileTransfer> fileTransfers, UUID directoryTransferId, String reason) {
+        for (FileTransfer ft : fileTransfers) {
+            ft.setStatus(TransferStatus.FAILED);
+            ft.setFailureReason(reason);
+        }
+        directoryTransferService.saveChildren(fileTransfers);
+        directoryTransferService.markFailed(directoryTransferId);
+    }
+
+    /**
+     * Registers the directory payload on the target device.
      */
     private void registerOnTarget(
             InitiateDirectoryTransferRequest request,
             UUID directoryTransferId,
-            UUID sourceAgentId,
+            UUID sourceDeviceId,
             String directoryName,
             WalkResult walk,
             List<ReceiveDirectoryRequest.FileEntry> fileEntries
@@ -188,7 +261,7 @@ public class DirectorySenderService {
                 request.getTargetPort(),
                 directoryTransferId,
                 request.getDispatchId(),
-                sourceAgentId,
+                sourceDeviceId,
                 directoryName,
                 walk.files().size(),
                 walk.totalSize(),
@@ -197,7 +270,8 @@ public class DirectorySenderService {
         );
     }
 
-    private record WalkResult(List<FileEntry> files, List<String> emptyDirectories, long totalSize) {
+    private record WalkResult(
+            List<FileEntry> files, List<String> emptyDirectories, long totalSize, int skipped) {
         record FileEntry(Path absolutePath, long fileSize) {}
     }
 }
