@@ -13,6 +13,6 @@ import org.springframework.context.annotation.Configuration;
 @Setter
 public class JwtConfig {
     private long adminExpirationMinutes;
-    private long agentAuthExpirationDays;
-    private long agentPublicExpirationDays;
+    private long deviceAuthExpirationDays;
+    private long devicePublicExpirationDays;
 }

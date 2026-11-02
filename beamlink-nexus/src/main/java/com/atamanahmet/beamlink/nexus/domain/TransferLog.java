@@ -8,7 +8,7 @@ import java.time.Instant;
 import java.util.UUID;
 
 /**
- * Received transfer log from all agents
+ * Received transfer log from all devices
  */
 @Getter
 @Setter
@@ -22,11 +22,11 @@ public class TransferLog {
     @JdbcTypeCode(12)
     private UUID id;
     @JdbcTypeCode(12)
-    private UUID fromAgentId;
-    private String fromAgentName;
+    private UUID fromDeviceId;
+    private String fromDeviceName;
     @JdbcTypeCode(12)
-    private UUID toAgentId;
-    private String toAgentName;
+    private UUID toDeviceId;
+    private String toDeviceName;
     private String filename;
     private long fileSize;
 

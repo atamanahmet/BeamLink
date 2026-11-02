@@ -10,7 +10,7 @@ import java.util.stream.Collectors;
 @Getter
 public enum TokenType {
     ADMIN,
-    AGENT_AUTH,
-    AGENT_PUBLIC,
+    DEVICE_AUTH,
+    DEVICE_PUBLIC,
     NEXUS;
 }

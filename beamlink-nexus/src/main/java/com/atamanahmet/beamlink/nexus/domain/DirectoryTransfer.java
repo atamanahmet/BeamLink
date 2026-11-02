@@ -30,10 +30,10 @@ public class DirectoryTransfer {
 
         @Column(nullable = false)
         @JdbcTypeCode(12)
-        private UUID sourceAgentId;
+        private UUID sourceDeviceId;
         @Column
         @JdbcTypeCode(12)
-        private UUID targetAgentId;
+        private UUID targetDeviceId;
         @Column
         private String targetIp;
         @Column
@@ -67,8 +67,8 @@ public class DirectoryTransfer {
         public static DirectoryTransfer initiate(
                         UUID directoryTransferId,
                         UUID dispatchId,
-                        UUID sourceAgentId,
-                        UUID targetAgentId,
+                        UUID sourceDeviceId,
+                        UUID targetDeviceId,
                         String targetIp,
                         int targetPort,
                         String directoryName,
@@ -79,8 +79,8 @@ public class DirectoryTransfer {
                 DirectoryTransfer dt = new DirectoryTransfer();
                 dt.directoryTransferId = directoryTransferId;
                 dt.dispatchId = dispatchId;
-                dt.sourceAgentId = sourceAgentId;
-                dt.targetAgentId = targetAgentId;
+                dt.sourceDeviceId = sourceDeviceId;
+                dt.targetDeviceId = targetDeviceId;
                 dt.targetIp = targetIp;
                 dt.targetPort = targetPort;
                 dt.directoryName = directoryName;

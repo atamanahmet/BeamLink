@@ -8,8 +8,8 @@ import lombok.RequiredArgsConstructor;
 public enum Role {
 
     ADMIN("ROLE_ADMIN"),
-    AGENT("ROLE_AGENT"),
-    AGENT_PUBLIC("ROLE_AGENT_PUBLIC");
+    DEVICE("ROLE_DEVICE"),
+    DEVICE_PUBLIC("ROLE_DEVICE_PUBLIC");
 
     private final String authority;
 }

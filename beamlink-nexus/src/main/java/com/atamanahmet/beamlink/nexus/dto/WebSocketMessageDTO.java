@@ -8,7 +8,7 @@ import lombok.NoArgsConstructor;
 
 /**
  * Wrapper for all WebSocket messages
- * @param <T> Payload type (ApprovalPushRequest, AgentStatusDTO, List<TransferLog> etc.)
+ * @param <T> Payload type (ApprovalPushRequest, DeviceStatusDTO, List<TransferLog> etc.)
  */
 @Builder
 @Data

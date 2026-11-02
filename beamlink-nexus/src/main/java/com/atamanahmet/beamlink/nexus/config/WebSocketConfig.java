@@ -1,7 +1,7 @@
 package com.atamanahmet.beamlink.nexus.config;
 
-import com.atamanahmet.beamlink.nexus.websocket.AgentHandshakeInterceptor;
-import com.atamanahmet.beamlink.nexus.websocket.AgentWebSocketHandler;
+import com.atamanahmet.beamlink.nexus.websocket.DeviceHandshakeInterceptor;
+import com.atamanahmet.beamlink.nexus.websocket.DeviceWebSocketHandler;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.web.socket.config.annotation.EnableWebSocket;
 import org.springframework.web.socket.config.annotation.WebSocketConfigurer;
@@ -14,13 +14,13 @@ import lombok.RequiredArgsConstructor;
 @RequiredArgsConstructor
 public class WebSocketConfig implements WebSocketConfigurer {
 
-    private final AgentWebSocketHandler agentWebSocketHandler;
-    private final AgentHandshakeInterceptor agentHandshakeInterceptor;
+    private final DeviceWebSocketHandler deviceWebSocketHandler;
+    private final DeviceHandshakeInterceptor deviceHandshakeInterceptor;
 
     @Override
     public void registerWebSocketHandlers(WebSocketHandlerRegistry registry) {
-        registry.addHandler(agentWebSocketHandler, "/ws/agents")
-                .addInterceptors(agentHandshakeInterceptor)
+        registry.addHandler(deviceWebSocketHandler, "/ws/devices")
+                .addInterceptors(deviceHandshakeInterceptor)
                 .setAllowedOrigins("*");
     }
 }
