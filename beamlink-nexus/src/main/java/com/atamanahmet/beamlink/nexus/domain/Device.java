@@ -1,6 +1,7 @@
 package com.atamanahmet.beamlink.nexus.domain;
 
-import com.atamanahmet.beamlink.nexus.domain.enums.AgentState;
+import com.atamanahmet.beamlink.nexus.domain.enums.DeviceState;
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import jakarta.persistence.*;
 import lombok.*;
 import org.hibernate.annotations.JdbcTypeCode;
@@ -12,14 +13,14 @@ import java.util.UUID;
 
 @Entity
 @Table(
-        name = "registered_agents",
-        uniqueConstraints = @UniqueConstraint(columnNames = {"ip_address", "port"}))
+        name = "registered_devices",
+        uniqueConstraints = @UniqueConstraint(columnNames = {"fingerprint"}))
 @Getter
 @Setter
 @NoArgsConstructor
 @AllArgsConstructor
 @Builder
-public class Agent {
+public class Device {
 
     @Id
     @GeneratedValue(strategy = GenerationType.UUID)
@@ -30,7 +31,7 @@ public class Agent {
     private int port;
     @Enumerated(EnumType.STRING)
     @Column(nullable = false)
-    private AgentState state;
+    private DeviceState state;
 
     @Column(name = "public_id", unique = true)
     @JdbcTypeCode(12)
@@ -40,8 +41,19 @@ public class Agent {
     private Instant renameRequestedAt;
     private Instant approvedAt;
     private Instant lastSeenAt;
-    @Column(nullable = false)
-    private boolean approvalPushed;
+
+    @JsonIgnore
+    @Column(name = "public_key", columnDefinition = "TEXT")
+    private String publicKey;
+
+    @Column(name = "fingerprint", unique = true)
+    private String fingerprint;
+
+    @Column(name = "tls_fingerprint")
+    private String tlsFingerprint;
+
+    @Column(name = "tls_port")
+    private Integer tlsPort;
 
     public boolean isOnline() {
         return this.lastSeenAt == null ? false : this.lastSeenAt.isAfter(Instant.now().minus(Duration.ofMinutes(2L)));
