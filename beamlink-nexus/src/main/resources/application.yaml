@@ -1,10 +1,17 @@
 server:
   port: ${NEXUS_PORT:7472}
-  address: 0.0.0.0
+  address: 127.0.0.1
+  tomcat:
+    max-http-form-post-size: -1
+    max-swallow-size: -1
 
 spring:
   application:
     name: beamlink-nexus
+  servlet:
+    multipart:
+      max-file-size: -1
+      max-request-size: -1
   config:
     import: optional:file:../config/.env[.properties]
   datasource:
@@ -27,13 +34,14 @@ spring:
     open-in-view: false
 
 nexus:
+  tls:
+    port: ${NEXUS_TLS_PORT:7473}
   data:
     directory: ${beamlink.runtime.dir}
   update:
     storage-path: ${beamlink.runtime.dir}/data/update-package
   upload:
     directory: ${beamlink.runtime.dir}/data/uploads
-    temp-directory: ${beamlink.runtime.dir}/data/temp
   approval:
     required: true
   name: ${NEXUS_NAME}
@@ -44,18 +52,17 @@ nexus:
     expiry-hours: ${TRANSFER_EXPIRY_HOURS:24}
   jwt:
     admin-expiration-minutes: ${NEXUS_JWT_ADMIN_EXPIRATION_MINUTES}
-    agent-auth-expiration-days: ${NEXUS_JWT_AGENT_AUTH_EXPIRATION_DAYS}
-    agent-public-expiration-days: ${NEXUS_JWT_AGENT_PUBLIC_EXPIRATION_DAYS}
+    device-auth-expiration-days: ${NEXUS_JWT_AGENT_AUTH_EXPIRATION_DAYS}
+    device-public-expiration-days: ${NEXUS_JWT_AGENT_PUBLIC_EXPIRATION_DAYS}
   cors:
     static-origins: ${NEXUS_CORS_STATIC_ORIGINS}
   admin:
-    username: ${NEXUS_ADMIN_USERNAME}
-    password: ${NEXUS_ADMIN_PASSWORD}
+    username: ${NEXUS_ADMIN_USERNAME:}
+    password: ${NEXUS_ADMIN_PASSWORD:}
 
 beamlink:
   transfer:
     chunk-size-bytes: 524288
-    window-size: 1
 
 logging:
   level:
@@ -65,7 +72,8 @@ logging:
   file:
     name: ${beamlink.runtime.dir}/logs/nexus.log
   pattern:
-    console: "%d{HH:mm:ss.SSS} [%thread] %-5level %logger{36} - %msg%n"
+    level: "%5p [%X{correlationId:-}]"
+    console: "%d{HH:mm:ss.SSS} [%thread] ${LOG_LEVEL_PATTERN:%5p} %logger{36} - %msg%n"
 
 management:
   endpoints:
