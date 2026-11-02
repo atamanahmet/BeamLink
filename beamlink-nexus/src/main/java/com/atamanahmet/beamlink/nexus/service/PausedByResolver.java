@@ -13,6 +13,9 @@ public final class PausedByResolver {
      * Keeps SOURCE if already set or incoming, else takes incoming.
      */
     public static PauseOwner resolvePausedBy(PauseOwner current, PauseOwner incoming) {
+        if (incoming == null) {
+            throw new IllegalArgumentException("pausedBy required");
+        }
         if (current == PauseOwner.SOURCE) {
             return PauseOwner.SOURCE;
         }

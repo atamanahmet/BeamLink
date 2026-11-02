@@ -2,7 +2,9 @@ package com.atamanahmet.beamlink.nexus.controller;
 
 import com.atamanahmet.beamlink.nexus.domain.enums.ResumePolicyMode;
 import com.atamanahmet.beamlink.nexus.domain.enums.SettingKey;
+import com.atamanahmet.beamlink.nexus.exception.InvalidRequestException;
 import com.atamanahmet.beamlink.nexus.exception.TransferProtocolException;
+import com.atamanahmet.beamlink.nexus.service.DiskReserveProvider;
 import com.atamanahmet.beamlink.nexus.service.NexusResumePolicyStore;
 import com.atamanahmet.beamlink.nexus.service.SettingsService;
 import com.atamanahmet.beamlink.nexus.service.SpeedLimitSettingsCache;
@@ -22,6 +24,7 @@ public class SettingsController {
     private final SettingsService settingsService;
     private final SpeedLimitSettingsCache speedLimitSettingsCache;
     private final NexusResumePolicyStore resumePolicyStore;
+    private final DiskReserveProvider diskReserveProvider;
 
     @GetMapping("/speed-cap")
     public ResponseEntity<Map<String, Object>> getSpeedCap() {
@@ -72,21 +75,52 @@ public class SettingsController {
     public ResponseEntity<Map<String, Object>> setResumePolicy(@RequestBody Map<String, String> body) {
         String raw = body == null ? null : body.get("resumePolicy");
         if (raw == null || raw.isBlank()) {
-            return ResponseEntity.badRequest()
-                    .body(Map.of(
-                            "code", "INVALID_RESUME_POLICY",
-                            "message", "resumePolicy must be OWNER_ONLY or ANYONE"));
+            throw new TransferProtocolException(
+                    "INVALID_RESUME_POLICY",
+                    "resumePolicy must be OWNER_ONLY or ANYONE",
+                    HttpStatus.BAD_REQUEST);
         }
         try {
             ResumePolicyMode mode = ResumePolicyMode.valueOf(raw.trim().toUpperCase());
             resumePolicyStore.setMode(mode);
             return ResponseEntity.ok(Map.of("resumePolicy", mode.name()));
         } catch (IllegalArgumentException e) {
-            return ResponseEntity.badRequest()
-                    .body(Map.of(
-                            "code", "INVALID_RESUME_POLICY",
-                            "message", "resumePolicy must be OWNER_ONLY or ANYONE"));
+            throw new TransferProtocolException(
+                    "INVALID_RESUME_POLICY",
+                    "resumePolicy must be OWNER_ONLY or ANYONE",
+                    HttpStatus.BAD_REQUEST);
         }
+    }
+
+    @GetMapping("/min-free-space")
+    public ResponseEntity<Map<String, Object>> getMinFreeSpace() {
+        return ResponseEntity.ok(Map.of("value", diskReserveProvider.getBytes()));
+    }
+
+    @PutMapping("/min-free-space")
+    public ResponseEntity<Map<String, Object>> setMinFreeSpace(
+            @RequestBody(required = false) Map<String, Object> body) {
+        long value = readLong(body);
+        settingsService.set(SettingKey.MIN_FREE_SPACE_BYTES, Long.toString(value));
+        diskReserveProvider.refresh();
+        return ResponseEntity.ok(Map.of("value", diskReserveProvider.getBytes()));
+    }
+
+    /**
+     * Reads a Long JSON number named value.
+     */
+    private static long readLong(Map<String, Object> body) {
+        if (body == null || !body.containsKey("value") || body.get("value") == null) {
+            throw new InvalidRequestException("value is required", "INVALID_SETTING");
+        }
+        Object raw = body.get("value");
+        if (raw instanceof Number n) {
+            long parsed = n.longValue();
+            SettingKey.MIN_FREE_SPACE_BYTES.validate(Long.toString(parsed));
+            return parsed;
+        }
+        SettingKey.MIN_FREE_SPACE_BYTES.validate(String.valueOf(raw));
+        return Long.parseLong(String.valueOf(raw).trim());
     }
 
     private static Double readLimit(Map<String, Double> body) {

@@ -31,4 +31,13 @@ class ResumePolicyTest {
         assertThat(ResumePolicy.canResume(
                 ResumePolicyMode.ANYONE, PauseOwner.TARGET, PauseOwner.SOURCE)).isTrue();
     }
+
+    @Test
+    void nullPausedByResumableUnderOwnerOnly() {
+        assertThat(ResumePolicy.canResume(
+                ResumePolicyMode.OWNER_ONLY, PauseOwner.SOURCE, null)).isTrue();
+        assertThat(ResumePolicy.canResume(
+                ResumePolicyMode.OWNER_ONLY, PauseOwner.TARGET, null)).isTrue();
+    }
 }
+

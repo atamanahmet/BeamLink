@@ -17,8 +17,11 @@ public final class ResumePolicy {
      */
     public static boolean canResume(
             ResumePolicyMode mode, PauseOwner side, PauseOwner pausedBy) {
-        if (mode == null || side == null || pausedBy == null) {
+        if (mode == null || side == null) {
             return false;
+        }
+        if (pausedBy == null) {
+            return true;
         }
         if (mode == ResumePolicyMode.ANYONE) {
             return true;

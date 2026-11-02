@@ -3,7 +3,6 @@ package com.atamanahmet.beamlink.nexus.service;
 import com.atamanahmet.beamlink.nexus.domain.FileTransfer;
 import com.atamanahmet.beamlink.nexus.domain.enums.PauseOwner;
 import com.atamanahmet.beamlink.nexus.domain.enums.TransferStatus;
-import com.atamanahmet.beamlink.nexus.repository.FileTransferRepository;
 import lombok.RequiredArgsConstructor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -22,7 +21,7 @@ public class TransferStartupJob implements ApplicationRunner {
 
     private static final Logger log = LoggerFactory.getLogger(TransferStartupJob.class);
 
-    private final FileTransferRepository transferRepository;
+    private final FileTransferService fileTransferService;
     private final TransferSideResolver sideResolver;
     private final TransferManagementService transferManagementService;
     private final PlatformTransactionManager transactionManager;
@@ -38,11 +37,11 @@ public class TransferStartupJob implements ApplicationRunner {
      * Pauses ACTIVE receive rows via pauseSingle so channels flush and close.
      */
     private void pauseActiveReceivingTransfers() {
-        List<FileTransfer> active = transferRepository.findByStatus(TransferStatus.ACTIVE);
+        List<FileTransfer> active = fileTransferService.findByStatus(TransferStatus.ACTIVE);
         int paused = 0;
         for (FileTransfer t : active) {
             PauseOwner side = sideResolver.resolve(
-                    t.getSourceAgentId(), t.getTargetAgentId(), t.getTargetIp());
+                    t.getSourceDeviceId(), t.getTargetDeviceId(), t.getTargetIp());
             if (side != PauseOwner.TARGET) {
                 continue;
             }
@@ -66,8 +65,8 @@ public class TransferStartupJob implements ApplicationRunner {
      */
     private void pauseInterruptedTransfers() {
         List<FileTransfer> interrupted = new ArrayList<>();
-        interrupted.addAll(transferRepository.findByStatus(TransferStatus.ACTIVE));
-        interrupted.addAll(transferRepository.findByStatus(TransferStatus.PENDING));
+        interrupted.addAll(fileTransferService.findByStatus(TransferStatus.ACTIVE));
+        interrupted.addAll(fileTransferService.findByStatus(TransferStatus.PENDING));
 
         if (interrupted.isEmpty()) {
             log.debug("No interrupted transfers found on startup");
@@ -76,14 +75,17 @@ public class TransferStartupJob implements ApplicationRunner {
 
         for (FileTransfer t : interrupted) {
             PauseOwner side = sideResolver.resolve(
-                    t.getSourceAgentId(), t.getTargetAgentId(), t.getTargetIp());
+                    t.getSourceDeviceId(), t.getTargetDeviceId(), t.getTargetIp());
+            if (side == null) {
+                throw new IllegalArgumentException("pausedBy required");
+            }
             t.setStatus(TransferStatus.PAUSED);
             t.setPausedBy(side);
             log.info("Paused interrupted transfer on startup: {} ({})",
                     t.getFileName(), t.getTransferId());
         }
 
-        transferRepository.saveAll(interrupted);
+        fileTransferService.saveAll(interrupted);
         log.info("Paused {} interrupted transfer(s) on startup", interrupted.size());
     }
 }

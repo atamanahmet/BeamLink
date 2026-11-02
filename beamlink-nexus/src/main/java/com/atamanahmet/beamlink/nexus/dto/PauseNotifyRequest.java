@@ -13,4 +13,5 @@ import lombok.Setter;
 @NoArgsConstructor
 public class PauseNotifyRequest {
     private PauseOwner pausedBy;
+    private String reason;
 }

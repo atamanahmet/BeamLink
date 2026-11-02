@@ -19,8 +19,8 @@ public class TransferSummary {
     private long totalSize;
     private long confirmedBytes;
     private int totalFiles;
-    private UUID sourceAgentId;
-    private UUID targetAgentId;
+    private UUID sourceDeviceId;
+    private UUID targetDeviceId;
     private String targetIp;
     private Integer targetPort;
     private Instant createdAt;

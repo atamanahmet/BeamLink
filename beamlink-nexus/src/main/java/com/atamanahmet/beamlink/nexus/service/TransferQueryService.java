@@ -5,12 +5,10 @@ import com.atamanahmet.beamlink.nexus.domain.DirectoryTransfer;
 import com.atamanahmet.beamlink.nexus.domain.FileTransfer;
 import com.atamanahmet.beamlink.nexus.domain.enums.PauseOwner;
 import com.atamanahmet.beamlink.nexus.domain.enums.TransferStatus;
+import com.atamanahmet.beamlink.nexus.dto.TransferListPage;
 import com.atamanahmet.beamlink.nexus.dto.TransferSummary;
 import com.atamanahmet.beamlink.nexus.exception.FileTransferException;
 import com.atamanahmet.beamlink.nexus.mapper.TransferMapper;
-import com.atamanahmet.beamlink.nexus.repository.BatchTransferRepository;
-import com.atamanahmet.beamlink.nexus.repository.DirectoryTransferRepository;
-import com.atamanahmet.beamlink.nexus.repository.FileTransferRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
@@ -23,9 +21,9 @@ import java.util.UUID;
 @RequiredArgsConstructor
 public class TransferQueryService {
 
-    private final FileTransferRepository fileTransferRepository;
-    private final BatchTransferRepository batchTransferRepository;
-    private final DirectoryTransferRepository directoryTransferRepository;
+    private final FileTransferService fileTransferService;
+    private final BatchTransferService batchTransferService;
+    private final DirectoryTransferService directoryTransferService;
     private final TransferMapper transferMapper;
     private final NexusResumePolicyStore resumePolicyStore;
     private final TransferSideResolver sideResolver;
@@ -33,18 +31,18 @@ public class TransferQueryService {
     public List<TransferSummary> listAll() {
         List<TransferSummary> result = new ArrayList<>();
 
-        fileTransferRepository.findAllByOrderByCreatedAtDesc()
+        fileTransferService.findAllByOrderByCreatedAtDesc()
                 .stream()
                 .filter(ft -> ft.getBatchTransferId() == null && ft.getDirectoryTransferId() == null)
                 .map(this::mapSingle)
                 .forEach(result::add);
 
-        batchTransferRepository.findAllByOrderByCreatedAtDesc()
+        batchTransferService.getAll()
                 .stream()
                 .map(this::mapBatch)
                 .forEach(result::add);
 
-        directoryTransferRepository.findAllByOrderByCreatedAtDesc()
+        directoryTransferService.getAll()
                 .stream()
                 .map(this::mapDirectory)
                 .forEach(result::add);
@@ -53,36 +51,51 @@ public class TransferQueryService {
         return result;
     }
 
+    /**
+     * Returns one page of the full transfer list.
+     */
+    public TransferListPage listPage(int page, int size) {
+        List<TransferSummary> all = listAll();
+        int total = all.size();
+        int from = Math.min(page * size, total);
+        int to = Math.min(from + size, total);
+        return TransferListPage.builder()
+                .items(all.subList(from, to))
+                .total(total)
+                .hasMore(to < total)
+                .build();
+    }
+
     public TransferSummary getSingle(UUID id) {
         return mapSingle(
-                fileTransferRepository.findByTransferId(id)
+                fileTransferService.findByTransferId(id)
                         .orElseThrow(() -> new FileTransferException("Transfer not found: " + id, null))
         );
     }
 
     public TransferSummary getBatch(UUID id) {
         return mapBatch(
-                batchTransferRepository.findById(id)
+                batchTransferService.findById(id)
                         .orElseThrow(() -> new FileTransferException("Batch transfer not found: " + id, null))
         );
     }
 
     public TransferSummary getDirectory(UUID id) {
         return mapDirectory(
-                directoryTransferRepository.findById(id)
+                directoryTransferService.findById(id)
                         .orElseThrow(() -> new FileTransferException("Directory transfer not found: " + id, null))
         );
     }
 
     public List<TransferSummary> getBatchFiles(UUID batchId) {
-        return fileTransferRepository.findByBatchTransferId(batchId)
+        return fileTransferService.findByBatchTransferId(batchId)
                 .stream()
                 .map(this::mapSingle)
                 .toList();
     }
 
     public List<TransferSummary> getDirectoryFiles(UUID directoryId) {
-        return fileTransferRepository.findByDirectoryTransferId(directoryId)
+        return fileTransferService.findByDirectoryTransferId(directoryId)
                 .stream()
                 .map(this::mapSingle)
                 .toList();
@@ -93,7 +106,7 @@ public class TransferQueryService {
     }
 
     private TransferSummary mapBatch(BatchTransfer bt) {
-        List<FileTransfer> children = fileTransferRepository.findByBatchTransferId(bt.getBatchTransferId());
+        List<FileTransfer> children = fileTransferService.findByBatchTransferId(bt.getBatchTransferId());
 
         long confirmedBytes = children.stream().mapToLong(FileTransfer::getConfirmedOffset).sum();
 
@@ -105,13 +118,13 @@ public class TransferQueryService {
         return transferMapper.fromBatch(bt, confirmedBytes, firstName, canResumeGroup(
                 bt.getStatus().name(),
                 bt.getPausedBy(),
-                bt.getSourceAgentId(),
-                bt.getTargetAgentId(),
+                bt.getSourceDeviceId(),
+                bt.getTargetDeviceId(),
                 bt.getTargetIp()));
     }
 
     private TransferSummary mapDirectory(DirectoryTransfer dt) {
-        long confirmedBytes = fileTransferRepository
+        long confirmedBytes = fileTransferService
                 .findByDirectoryTransferId(dt.getDirectoryTransferId())
                 .stream()
                 .mapToLong(FileTransfer::getConfirmedOffset)
@@ -120,8 +133,8 @@ public class TransferQueryService {
         return transferMapper.fromDirectory(dt, confirmedBytes, canResumeGroup(
                 dt.getStatus().name(),
                 dt.getPausedBy(),
-                dt.getSourceAgentId(),
-                dt.getTargetAgentId(),
+                dt.getSourceDeviceId(),
+                dt.getTargetDeviceId(),
                 dt.getTargetIp()));
     }
 
@@ -130,20 +143,20 @@ public class TransferQueryService {
             return false;
         }
         PauseOwner side = sideResolver.resolve(
-                ft.getSourceAgentId(), ft.getTargetAgentId(), ft.getTargetIp());
+                ft.getSourceDeviceId(), ft.getTargetDeviceId(), ft.getTargetIp());
         return ResumePolicy.canResume(resumePolicyStore.getMode(), side, ft.getPausedBy());
     }
 
     private boolean canResumeGroup(
             String statusName,
             PauseOwner pausedBy,
-            UUID sourceAgentId,
-            UUID targetAgentId,
+            UUID sourceDeviceId,
+            UUID targetDeviceId,
             String targetIp) {
         if (!"PAUSED".equals(statusName)) {
             return false;
         }
-        PauseOwner side = sideResolver.resolve(sourceAgentId, targetAgentId, targetIp);
+        PauseOwner side = sideResolver.resolve(sourceDeviceId, targetDeviceId, targetIp);
         return ResumePolicy.canResume(resumePolicyStore.getMode(), side, pausedBy);
     }
 }

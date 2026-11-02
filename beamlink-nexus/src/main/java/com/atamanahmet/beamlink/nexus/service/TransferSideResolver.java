@@ -18,15 +18,15 @@ public class TransferSideResolver {
     /**
      * Uses local nexus id, then target fields as fallback.
      */
-    public PauseOwner resolve(UUID sourceAgentId, UUID targetAgentId, String targetIp) {
+    public PauseOwner resolve(UUID sourceDeviceId, UUID targetDeviceId, String targetIp) {
         UUID localId = nexusService.getNexusId();
-        if (localId != null && localId.equals(sourceAgentId)) {
+        if (localId != null && localId.equals(sourceDeviceId)) {
             return PauseOwner.SOURCE;
         }
-        if (localId != null && localId.equals(targetAgentId)) {
+        if (localId != null && localId.equals(targetDeviceId)) {
             return PauseOwner.TARGET;
         }
-        if (targetAgentId == null && sourceAgentId != null) {
+        if (targetDeviceId == null && sourceDeviceId != null) {
             return PauseOwner.TARGET;
         }
         if (targetIp != null && !targetIp.isBlank()) {
