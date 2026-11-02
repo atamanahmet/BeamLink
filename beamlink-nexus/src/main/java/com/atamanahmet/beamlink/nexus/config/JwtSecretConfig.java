@@ -1,8 +1,7 @@
 package com.atamanahmet.beamlink.nexus.config;
 
-import com.atamanahmet.beamlink.nexus.domain.Setting;
 import com.atamanahmet.beamlink.nexus.domain.enums.SettingKey;
-import com.atamanahmet.beamlink.nexus.repository.SettingsRepository;
+import com.atamanahmet.beamlink.nexus.service.SettingsService;
 import jakarta.annotation.PostConstruct;
 import lombok.Getter;
 import lombok.RequiredArgsConstructor;
@@ -27,11 +26,12 @@ public class JwtSecretConfig {
     private String envSecret;
     private String resolvedSecret;
     private final JwtConfig jwtConfig;
-    private final SettingsRepository settingsRepository;
+    private final SettingsService settingsService;
 
     @PostConstruct
     public void resolve() {
-        this.settingsRepository.findByKey(SettingKey.JWT_SECRET).ifPresentOrElse((setting) -> this.resolvedSecret = setting.getValue(), this::initializeFromEnvOrGenerate);
+        this.settingsService.get(SettingKey.JWT_SECRET)
+                .ifPresentOrElse(value -> this.resolvedSecret = value, this::initializeFromEnvOrGenerate);
     }
 
     private void initializeFromEnvOrGenerate() {
@@ -42,7 +42,7 @@ public class JwtSecretConfig {
             secretToUse = this.generateSecret();
         }
 
-        this.settingsRepository.save(new Setting(SettingKey.JWT_SECRET, secretToUse));
+        this.settingsService.set(SettingKey.JWT_SECRET, secretToUse);
         this.resolvedSecret = secretToUse;
     }
 

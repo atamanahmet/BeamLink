@@ -30,4 +30,14 @@ public class NexusAuthHttpSender implements HttpSender {
 
         return this.delegate.send(authenticated);
     }
+
+    @Override
+    public HttpResponse<String> sendPinned(HttpRequest request, String pin)
+            throws IOException, InterruptedException {
+        HttpRequest authenticated = HttpRequest
+                .newBuilder(request, (k, v) -> true)
+                .header("X-Public-Token", this.nexusService.getPublicToken())
+                .header("X-Public-Id", this.nexusService.getNexusId().toString()).build();
+        return this.delegate.sendPinned(authenticated, pin);
+    }
 }

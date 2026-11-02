@@ -44,4 +44,10 @@ public class Nexus {
 
     @Column(nullable = false)
     private String encodedPassword;
+
+    @Column(nullable = false)
+    private int tokenVersion;
+
+    @Column
+    private String encodedRecoveryCode;
 }
