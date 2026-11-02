@@ -9,7 +9,7 @@ import java.util.List;
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
-public class AgentStatusResponse {
+public class DeviceStatusResponse {
     private String status;
     private boolean peerOutdated;
     private List<PeerDTO> peers;

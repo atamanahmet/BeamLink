@@ -9,9 +9,6 @@ import java.util.UUID;
 @Getter
 @Setter
 @NoArgsConstructor
-public class AgentStatusRequest {
-    private UUID agentId;
-    private String ipAddress;
-    private int port;
-    private long peerVersion;
+public class DeviceChallengeRequest {
+    private UUID deviceId;
 }

@@ -7,8 +7,12 @@ import lombok.Setter;
 @Getter
 @Setter
 @NoArgsConstructor
-public class AgentRegistrationRequest {
-    private String agentName;
+public class DeviceRegistrationRequest {
+    private String deviceName;
     private String ipAddress;
     private int port;
+    private String publicKey;
+    private String tlsFingerprint;
+    private Integer tlsPort;
+    private String signature;
 }

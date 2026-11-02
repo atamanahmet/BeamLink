@@ -1,20 +1,23 @@
 package com.atamanahmet.beamlink.nexus.security.filter;
 
-import com.atamanahmet.beamlink.nexus.domain.Agent;
-import com.atamanahmet.beamlink.nexus.domain.enums.AgentState;
-import com.atamanahmet.beamlink.nexus.repository.AgentRepository;
-import com.atamanahmet.beamlink.nexus.security.AgentTokenService;
+import com.atamanahmet.beamlink.nexus.domain.Device;
+import com.atamanahmet.beamlink.nexus.domain.enums.DeviceState;
+import com.atamanahmet.beamlink.nexus.service.DeviceService;
+import com.atamanahmet.beamlink.nexus.security.AdminTokenVersionRule;
+import com.atamanahmet.beamlink.nexus.security.DeviceTokenService;
 import com.atamanahmet.beamlink.nexus.security.enums.Role;
 import com.atamanahmet.beamlink.nexus.security.enums.TokenType;
+import com.atamanahmet.beamlink.nexus.exception.ErrorReason;
 import com.atamanahmet.beamlink.nexus.exception.InvalidTokenException;
+import com.atamanahmet.beamlink.nexus.exception.ProblemDetailWriter;
 import com.atamanahmet.beamlink.nexus.service.NexusService;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
-import jakarta.servlet.http.Cookie;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.http.HttpStatus;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.context.SecurityContextHolder;
@@ -22,17 +25,16 @@ import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
 
 import java.io.IOException;
-import java.util.Arrays;
 import java.util.List;
 import java.util.UUID;
 
 @Slf4j
 @Component
 @RequiredArgsConstructor
-public class AgentTokenFilter extends OncePerRequestFilter {
+public class DeviceTokenFilter extends OncePerRequestFilter {
 
-    private final AgentTokenService agentTokenService;
-    private final AgentRepository agentRepository;
+    private final DeviceTokenService deviceTokenService;
+    private final DeviceService deviceService;
     private final NexusService nexusService;
 
     @Override
@@ -46,46 +48,53 @@ public class AgentTokenFilter extends OncePerRequestFilter {
                 processToken(token);
             }
         } catch (InvalidTokenException e) {
-            log.warn("Token processing failed: {}", e.getMessage());
+            log.warn("Token processing failed", e);
+            ProblemDetailWriter.write(
+                    response,
+                    HttpStatus.UNAUTHORIZED,
+                    "Unauthorized",
+                    "Invalid token",
+                    "UNAUTHORIZED",
+                    ErrorReason.UNKNOWN);
+            return;
         }
 
         chain.doFilter(request, response);
     }
 
     private void processToken(String token) {
-        TokenType tokenType = agentTokenService.extractTokenType(token);
+        TokenType tokenType = deviceTokenService.extractTokenType(token);
 
         switch (tokenType) {
             case ADMIN -> setAdminAuthentication(token);
-            case AGENT_AUTH -> setAgentAuthAuthentication(token);
-            case AGENT_PUBLIC -> setAgentPublicAuthentication(token);
+            case DEVICE_AUTH -> setDeviceAuthAuthentication(token);
+            case DEVICE_PUBLIC -> setDevicePublicAuthentication(token);
             case NEXUS -> setNexusAuthentication(token);
         }
     }
 
     /**
-     * Extracts JWT from cookie or header
+     * Extracts JWT from auth headers only.
      */
     private String extractToken(HttpServletRequest request) {
-        if (request.getCookies() != null) {
-            String cookieToken = Arrays.stream(request.getCookies())
-                    .filter(c -> "nexus_token".equals(c.getName()))
-                    .map(Cookie::getValue)
-                    .findFirst()
-                    .orElse(null);
-            if (cookieToken != null) return cookieToken;
-        }
-
         String authToken = request.getHeader("X-Auth-Token");
-
         return authToken != null ? authToken : request.getHeader("X-Public-Token");
     }
 
     /**
-     * Sets admin authentication in SecurityContext
+     * Sets admin authentication when tv matches the Nexus row.
      */
     private void setAdminAuthentication(String token) {
-        String subject = agentTokenService.extractSubject(token);
+        Integer claimTv = deviceTokenService.extractTokenVersion(token);
+        if (claimTv == null) {
+            throw new InvalidTokenException("Token does not contain tv claim", null);
+        }
+        if (!AdminTokenVersionRule.matches(claimTv, nexusService.getTokenVersion())) {
+            log.warn("Admin token rejected: token version mismatch");
+            return;
+        }
+
+        String subject = deviceTokenService.extractSubject(token);
 
         SecurityContextHolder.getContext().setAuthentication(
                 new UsernamePasswordAuthenticationToken(
@@ -97,7 +106,7 @@ public class AgentTokenFilter extends OncePerRequestFilter {
     }
 
     private void setNexusAuthentication(String token) {
-        UUID claimedId = UUID.fromString(agentTokenService.extractSubject(token));
+        UUID claimedId = UUID.fromString(deviceTokenService.extractSubject(token));
 
         if (!claimedId.equals(nexusService.getNexusId())) {
             log.warn("Nexus token subject {} does not match known nexus id", claimedId);
@@ -106,55 +115,55 @@ public class AgentTokenFilter extends OncePerRequestFilter {
                     new UsernamePasswordAuthenticationToken(
                             claimedId,
                             null,
-                            List.of(new SimpleGrantedAuthority(Role.AGENT.getAuthority()))));
+                            List.of(new SimpleGrantedAuthority(Role.DEVICE.getAuthority()))));
         }
     }
 
     /**
-     * Sets agent authentication after verifying token and agent state
+     * Sets device authentication after verifying token and device state.
      */
-    private void setAgentAuthAuthentication(String token) {
-        UUID agentId = agentTokenService.extractAgentId(token);
+    private void setDeviceAuthAuthentication(String token) {
+        UUID deviceId = deviceTokenService.extractDeviceId(token);
 
-        Agent agent = agentRepository.findById(agentId).orElse(null);
-        if (agent == null) {
-            log.warn("Auth token references unknown agent: {}", agentId);
+        Device device = deviceService.findOptional(deviceId).orElse(null);
+        if (device == null) {
+            log.warn("Auth token references unknown device: {}", deviceId);
             return;
         }
 
-        if (agent.getState() != AgentState.APPROVED) {
-            log.warn("Auth token rejected for non-approved agent: {}", agentId);
+        if (device.getState() != DeviceState.APPROVED) {
+            log.warn("Auth token rejected for non-approved device: {}", deviceId);
             return;
         }
 
         SecurityContextHolder.getContext().setAuthentication(
                 new UsernamePasswordAuthenticationToken(
-                        agentId,
+                        deviceId,
                         null,
-                        List.of(new SimpleGrantedAuthority(Role.AGENT.getAuthority()))
+                        List.of(new SimpleGrantedAuthority(Role.DEVICE.getAuthority()))
                 )
         );
     }
 
-    private void setAgentPublicAuthentication(String token) {
-        UUID publicId = agentTokenService.extractPublicId(token);
+    private void setDevicePublicAuthentication(String token) {
+        UUID publicId = deviceTokenService.extractPublicId(token);
 
-        Agent agent = agentRepository.findByPublicId(publicId).orElse(null);
-        if (agent == null) {
+        Device device = deviceService.findByPublicId(publicId).orElse(null);
+        if (device == null) {
             log.warn("Public token references unknown publicId: {}", publicId);
             return;
         }
 
-        if (agent.getState() != AgentState.APPROVED) {
-            log.warn("Public token rejected for non-approved agent: {}", agent.getId());
+        if (device.getState() != DeviceState.APPROVED) {
+            log.warn("Public token rejected for non-approved device: {}", device.getId());
             return;
         }
 
         SecurityContextHolder.getContext().setAuthentication(
                 new UsernamePasswordAuthenticationToken(
-                        agent.getId(),
+                        device.getId(),
                         null,
-                        List.of(new SimpleGrantedAuthority(Role.AGENT_PUBLIC.getAuthority()))
+                        List.of(new SimpleGrantedAuthority(Role.DEVICE_PUBLIC.getAuthority()))
                 )
         );
     }
