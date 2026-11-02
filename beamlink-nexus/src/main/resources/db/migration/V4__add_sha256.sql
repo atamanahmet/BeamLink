@@ -1,0 +1,1 @@
+ALTER TABLE file_transfer ADD COLUMN sha256 VARCHAR(64);

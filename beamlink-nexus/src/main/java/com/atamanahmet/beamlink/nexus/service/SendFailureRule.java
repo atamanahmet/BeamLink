@@ -1,17 +1,18 @@
 package com.atamanahmet.beamlink.nexus.service;
 
 import com.atamanahmet.beamlink.nexus.exception.ChunkHttpException;
+import com.atamanahmet.beamlink.nexus.exception.OffsetMismatchException;
 import com.atamanahmet.beamlink.nexus.exception.TransferProtocolException;
 
 /**
- * Classifies send failures as OFFLINE, RETRY, or FATAL.
+ * Classifies send failures as OFFLINE, RETRY, RESYNC, CHUNK_CORRUPT, or FATAL.
  */
 public final class SendFailureRule {
 
     private SendFailureRule() {}
 
     /**
-     * Picks OFFLINE, RETRY, or FATAL from the error cause chain.
+     * Picks OFFLINE, RETRY, RESYNC, CHUNK_CORRUPT, or FATAL from the error cause chain.
      */
     public static SendFailureKind classify(Throwable error) {
         if (error == null) {
@@ -21,20 +22,38 @@ public final class SendFailureRule {
             return SendFailureKind.OFFLINE;
         }
         for (Throwable t = error; t != null; t = t.getCause()) {
-            if (t instanceof TransferProtocolException) {
+            if (t instanceof OffsetMismatchException) {
+                return SendFailureKind.RESYNC;
+            }
+            if (t instanceof TransferProtocolException protocol) {
+                if ("CHUNK_CHECKSUM_MISMATCH".equals(protocol.getCode())) {
+                    return SendFailureKind.CHUNK_CORRUPT;
+                }
                 return SendFailureKind.FATAL;
             }
             if (t instanceof ChunkHttpException httpError) {
+                if (httpError.getStatusCode() == 422) {
+                    return SendFailureKind.CHUNK_CORRUPT;
+                }
                 return classifyHttpStatus(httpError.getStatusCode());
-            }
-            if (isChecksumMessage(t.getMessage())) {
-                return SendFailureKind.FATAL;
             }
         }
         return SendFailureKind.RETRY;
     }
 
+    /**
+     * True when sendChunkWithRetry should resend the same chunk.
+     */
+    public static boolean allowsChunkRetry(SendFailureKind kind) {
+        return kind == SendFailureKind.RETRY
+                || kind == SendFailureKind.OFFLINE
+                || kind == SendFailureKind.CHUNK_CORRUPT;
+    }
+
     private static SendFailureKind classifyHttpStatus(int status) {
+        if (DiskPauseRule.senderNoRetry(status)) {
+            return SendFailureKind.FATAL;
+        }
         if (status == 408 || status == 429 || (status >= 500 && status <= 599)) {
             return SendFailureKind.RETRY;
         }
@@ -42,12 +61,5 @@ public final class SendFailureRule {
             return SendFailureKind.FATAL;
         }
         return SendFailureKind.RETRY;
-    }
-
-    private static boolean isChecksumMessage(String message) {
-        if (message == null || message.isBlank()) {
-            return false;
-        }
-        return message.toLowerCase().contains("checksum");
     }
 }
