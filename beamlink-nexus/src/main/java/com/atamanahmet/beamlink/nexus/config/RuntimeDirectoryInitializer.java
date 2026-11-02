@@ -21,7 +21,7 @@ public class RuntimeDirectoryInitializer {
 
     @PostConstruct
     public void init() {
-        String[] subdirs = {"data/database", "data/uploads", "data/temp", "logs"};
+        String[] subdirs = {"data/database", "data/uploads", "logs"};
         for (String sub : subdirs) {
             Path dir = Path.of(runtimeDir, sub);
             try {
