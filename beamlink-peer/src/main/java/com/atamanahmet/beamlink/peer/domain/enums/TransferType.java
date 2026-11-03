@@ -1,4 +1,4 @@
-package com.atamanahmet.beamlink.agent.domain.enums;
+package com.atamanahmet.beamlink.peer.domain.enums;
 
 public enum TransferType {
     SINGLE,

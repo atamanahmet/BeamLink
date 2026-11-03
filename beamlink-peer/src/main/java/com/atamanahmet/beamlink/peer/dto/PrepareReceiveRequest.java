@@ -1,4 +1,4 @@
-package com.atamanahmet.beamlink.agent.dto;
+package com.atamanahmet.beamlink.peer.dto;
 
 import lombok.Getter;
 import lombok.NoArgsConstructor;
@@ -11,9 +11,9 @@ import java.util.UUID;
 @NoArgsConstructor
 public class PrepareReceiveRequest {
     private UUID transferId;
-    private UUID sourceAgentId;
+    private UUID sourceDeviceId;
     private String sourceIp;
     private Integer sourcePort;
     private String fileName;
-    private long fileSize;
+    private Long fileSize;
 }

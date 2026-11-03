@@ -1,6 +1,6 @@
-package com.atamanahmet.beamlink.agent.dto;
+package com.atamanahmet.beamlink.peer.dto;
 
-import com.atamanahmet.beamlink.agent.domain.enums.TransferType;
+import com.atamanahmet.beamlink.peer.domain.enums.TransferType;
 import lombok.AllArgsConstructor;
 import lombok.Getter;
 

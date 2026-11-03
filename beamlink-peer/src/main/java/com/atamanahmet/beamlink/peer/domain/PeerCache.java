@@ -1,4 +1,4 @@
-package com.atamanahmet.beamlink.agent.domain;
+package com.atamanahmet.beamlink.peer.domain;
 
 import lombok.Data;
 import java.util.List;

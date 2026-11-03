@@ -1,4 +1,4 @@
-package com.atamanahmet.beamlink.agent.dto;
+package com.atamanahmet.beamlink.peer.dto;
 
 import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonProperty;

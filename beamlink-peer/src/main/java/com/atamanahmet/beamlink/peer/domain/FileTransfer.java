@@ -1,7 +1,7 @@
-package com.atamanahmet.beamlink.agent.domain;
+package com.atamanahmet.beamlink.peer.domain;
 
-import com.atamanahmet.beamlink.agent.domain.enums.PauseOwner;
-import com.atamanahmet.beamlink.agent.domain.enums.TransferStatus;
+import com.atamanahmet.beamlink.peer.domain.enums.PauseOwner;
+import com.atamanahmet.beamlink.peer.domain.enums.TransferStatus;
 import jakarta.persistence.*;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
@@ -33,11 +33,11 @@ public class FileTransfer {
 
     @Column(nullable = false)
     @JdbcTypeCode(12)
-    private UUID sourceAgentId;
+    private UUID sourceDeviceId;
 
     @Column
     @JdbcTypeCode(12)
-    private UUID targetAgentId;
+    private UUID targetDeviceId;
 
     @Column
     private String sourceIp;
@@ -102,16 +102,16 @@ public class FileTransfer {
 
     public static FileTransfer initiate(
             UUID transferId,
-            UUID sourceAgentId,
-            UUID targetAgentId,
+            UUID sourceDeviceId,
+            UUID targetDeviceId,
             String fileName,
             String filePath,
             long fileSize
     ) {
         FileTransfer ft = new FileTransfer();
         ft.transferId = transferId;
-        ft.sourceAgentId = sourceAgentId;
-        ft.targetAgentId = targetAgentId;
+        ft.sourceDeviceId = sourceDeviceId;
+        ft.targetDeviceId = targetDeviceId;
         ft.fileName = fileName;
         ft.filePath = filePath;
         ft.fileSize = fileSize;

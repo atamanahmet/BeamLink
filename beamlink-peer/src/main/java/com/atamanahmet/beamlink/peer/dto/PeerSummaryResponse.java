@@ -1,4 +1,4 @@
-package com.atamanahmet.beamlink.agent.dto;
+package com.atamanahmet.beamlink.peer.dto;
 
 import java.util.UUID;
 
@@ -7,7 +7,7 @@ import java.util.UUID;
  */
 public record PeerSummaryResponse(
         UUID id,
-        String agentName,
+        String deviceName,
         String ipAddress,
         int port,
         boolean online

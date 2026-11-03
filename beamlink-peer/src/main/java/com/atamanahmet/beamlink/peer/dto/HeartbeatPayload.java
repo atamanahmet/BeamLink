@@ -1,3 +1,3 @@
-package com.atamanahmet.beamlink.agent.dto;
+package com.atamanahmet.beamlink.peer.dto;
 
 public record HeartbeatPayload(long peerVersion) {}

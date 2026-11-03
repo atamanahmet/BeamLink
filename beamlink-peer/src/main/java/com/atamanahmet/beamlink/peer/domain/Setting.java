@@ -1,6 +1,6 @@
-package com.atamanahmet.beamlink.agent.domain;
+package com.atamanahmet.beamlink.peer.domain;
 
-import com.atamanahmet.beamlink.agent.domain.enums.SettingKey;
+import com.atamanahmet.beamlink.peer.domain.enums.SettingKey;
 import jakarta.persistence.*;
 import lombok.Getter;
 import lombok.NoArgsConstructor;

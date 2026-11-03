@@ -1,4 +1,4 @@
-package com.atamanahmet.beamlink.agent.domain;
+package com.atamanahmet.beamlink.peer.domain;
 
 import jakarta.persistence.*;
 import lombok.*;
@@ -16,10 +16,10 @@ public class Peer {
 
     @Id
     @Column(nullable = false, updatable = false)
-    private UUID agentId;
+    private UUID deviceId;
 
     @Column(nullable = false)
-    private String agentName;
+    private String deviceName;
 
     @Column(nullable = false)
     private String ipAddress;
@@ -34,6 +34,10 @@ public class Peer {
     private boolean online;
 
     private UUID publicId;
+
+    private Integer tlsPort;
+
+    private String tlsFingerprint;
 
     public String getAddress() {
         return ipAddress + ":" + port;

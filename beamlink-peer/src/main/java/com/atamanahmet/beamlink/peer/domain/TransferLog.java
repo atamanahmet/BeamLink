@@ -1,6 +1,6 @@
-package com.atamanahmet.beamlink.agent.domain;
+package com.atamanahmet.beamlink.peer.domain;
 
-import com.atamanahmet.beamlink.agent.domain.enums.TransferSyncState;
+import com.atamanahmet.beamlink.peer.domain.enums.TransferSyncState;
 import com.fasterxml.jackson.annotation.JsonAnyGetter;
 import jakarta.persistence.*;
 import lombok.*;
@@ -26,10 +26,10 @@ public class TransferLog {
     @Column(nullable = false, updatable = false)
     private UUID id;
 
-    private UUID fromAgentId;
-    private String fromAgentName;
-    private UUID toAgentId;
-    private String toAgentName;
+    private UUID fromDeviceId;
+    private String fromDeviceName;
+    private UUID toDeviceId;
+    private String toDeviceName;
 
     @Column(nullable = false)
     private String filename;

@@ -1,7 +1,7 @@
-package com.atamanahmet.beamlink.agent.domain;
+package com.atamanahmet.beamlink.peer.domain;
 
-import com.atamanahmet.beamlink.agent.domain.enums.GroupTransferStatus;
-import com.atamanahmet.beamlink.agent.domain.enums.PauseOwner;
+import com.atamanahmet.beamlink.peer.domain.enums.GroupTransferStatus;
+import com.atamanahmet.beamlink.peer.domain.enums.PauseOwner;
 import jakarta.persistence.*;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
@@ -29,11 +29,11 @@ public class BatchTransfer {
 
     @Column(nullable = false)
     @JdbcTypeCode(12)
-    private UUID sourceAgentId;
+    private UUID sourceDeviceId;
 
     @Column
     @JdbcTypeCode(12)
-    private UUID targetAgentId;
+    private UUID targetDeviceId;
 
     @Column
     private String targetIp;
@@ -67,8 +67,8 @@ public class BatchTransfer {
     public static BatchTransfer initiate(
             UUID batchTransferId,
             UUID dispatchId,
-            UUID sourceAgentId,
-            UUID targetAgentId,
+            UUID sourceDeviceId,
+            UUID targetDeviceId,
             String targetIp,
             int targetPort,
             int totalFiles,
@@ -77,8 +77,8 @@ public class BatchTransfer {
         BatchTransfer bt = new BatchTransfer();
         bt.batchTransferId = batchTransferId;
         bt.dispatchId = dispatchId;
-        bt.sourceAgentId = sourceAgentId;
-        bt.targetAgentId = targetAgentId;
+        bt.sourceDeviceId = sourceDeviceId;
+        bt.targetDeviceId = targetDeviceId;
         bt.targetIp = targetIp;
         bt.targetPort = targetPort;
         bt.totalFiles = totalFiles;
