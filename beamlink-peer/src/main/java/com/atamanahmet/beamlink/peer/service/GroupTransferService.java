@@ -1,0 +1,33 @@
+package com.atamanahmet.beamlink.peer.service;
+
+import com.atamanahmet.beamlink.peer.domain.FileTransfer;
+import com.atamanahmet.beamlink.peer.domain.enums.GroupTransferStatus;
+
+import java.util.List;
+import java.util.UUID;
+
+public interface GroupTransferService {
+
+    UUID getGroupId();
+
+    GroupTransferStatus getStatus(UUID groupId);
+
+    List<FileTransfer> getOrderedQueue(UUID groupId);
+
+    List<FileTransfer> getAllChildren(UUID groupId);
+
+    void markActive(UUID groupId);
+
+    void markCompleted(UUID groupId);
+
+    void markPartial(UUID groupId);
+
+    void markFailed(UUID groupId);
+
+    void markCancelled(UUID groupId);
+
+    /**
+     * Sets group status from the child file statuses.
+     */
+    void applyChildStatusRollup(UUID groupId);
+}

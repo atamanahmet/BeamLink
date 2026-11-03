@@ -1,0 +1,96 @@
+package com.atamanahmet.beamlink.peer.mapper;
+
+import com.atamanahmet.beamlink.peer.domain.BatchTransfer;
+import com.atamanahmet.beamlink.peer.domain.DirectoryTransfer;
+import com.atamanahmet.beamlink.peer.domain.FileTransfer;
+import com.atamanahmet.beamlink.peer.domain.enums.TransferType;
+import com.atamanahmet.beamlink.peer.dto.TransferSummary;
+import com.atamanahmet.beamlink.peer.service.SpeedLimitMath;
+import com.atamanahmet.beamlink.peer.service.SpeedLimitSettingsCache;
+import lombok.RequiredArgsConstructor;
+import org.springframework.stereotype.Component;
+
+@Component
+@RequiredArgsConstructor
+public class TransferMapper {
+
+    private final SpeedLimitSettingsCache speedLimitSettingsCache;
+
+    public TransferSummary fromSingle(FileTransfer ft, boolean canResume) {
+        Double override = ft.getSpeedLimitMbps();
+        Double effective = SpeedLimitMath.resolveFileLimit(
+                override, speedLimitSettingsCache.getFileDefaultMbps());
+        return TransferSummary.builder()
+                .id(ft.getTransferId())
+                .type(TransferType.SINGLE)
+                .name(ft.getFileName())
+                .status(ft.getStatus().name())
+                .totalSize(ft.getFileSize())
+                .confirmedBytes(ft.getConfirmedOffset())
+                .totalFiles(1)
+                .sourceDeviceId(ft.getSourceDeviceId())
+                .targetDeviceId(ft.getTargetDeviceId())
+                .targetIp(ft.getTargetIp())
+                .targetPort(ft.getTargetPort())
+                .createdAt(ft.getCreatedAt())
+                .failureReason(ft.getFailureReason())
+                .activeTransferMs(ft.getActiveTransferMs())
+                .pausedBy(ft.getPausedBy() == null ? null : ft.getPausedBy().name())
+                .canResume(canResume)
+                .speedLimitMbps(override)
+                .effectiveLimitMbps(effective)
+                .build();
+    }
+
+    /**
+     * confirmedBytes summed from children, passed in to avoid repo dependency in mapper
+     */
+    public TransferSummary fromBatch(
+            BatchTransfer bt, long confirmedBytes, String firstName, boolean canResume) {
+        return TransferSummary.builder()
+                .id(bt.getBatchTransferId())
+                .dispatchId(bt.getDispatchId())
+                .type(TransferType.BATCH)
+                .name(firstName + " +" + (bt.getTotalFiles() - 1) + " files")
+                .status(bt.getStatus().name())
+                .totalSize(bt.getTotalSize())
+                .confirmedBytes(confirmedBytes)
+                .totalFiles(bt.getTotalFiles())
+                .sourceDeviceId(bt.getSourceDeviceId())
+                .targetDeviceId(bt.getTargetDeviceId())
+                .targetIp(bt.getTargetIp())
+                .targetPort(bt.getTargetPort())
+                .createdAt(bt.getCreatedAt())
+                .completedAt(bt.getCompletedAt())
+                .failureReason(bt.getFailureReason())
+                .pausedBy(bt.getPausedBy() == null ? null : bt.getPausedBy().name())
+                .canResume(canResume)
+                .build();
+    }
+
+    /**
+     * confirmedBytes summed from children, passed in to avoid repo dependency in mapper
+     */
+    public TransferSummary fromDirectory(
+            DirectoryTransfer dt, long confirmedBytes, boolean canResume) {
+        return TransferSummary.builder()
+                .id(dt.getDirectoryTransferId())
+                .dispatchId(dt.getDispatchId())
+                .type(TransferType.DIRECTORY)
+                .name(dt.getDirectoryName())
+                .status(dt.getStatus().name())
+                .totalSize(dt.getTotalSize())
+                .confirmedBytes(confirmedBytes)
+                .totalFiles(dt.getTotalFiles())
+                .sourceDeviceId(dt.getSourceDeviceId())
+                .targetDeviceId(dt.getTargetDeviceId())
+                .targetIp(dt.getTargetIp())
+                .targetPort(dt.getTargetPort())
+                .createdAt(dt.getCreatedAt())
+                .completedAt(dt.getCompletedAt())
+                .failureReason(dt.getFailureReason())
+                .pausedBy(dt.getPausedBy() == null ? null : dt.getPausedBy().name())
+                .canResume(canResume)
+                .build();
+    }
+}

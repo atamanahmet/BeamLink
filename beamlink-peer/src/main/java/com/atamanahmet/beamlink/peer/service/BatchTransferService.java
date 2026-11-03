@@ -1,0 +1,161 @@
+package com.atamanahmet.beamlink.peer.service;
+
+import com.atamanahmet.beamlink.peer.domain.BatchTransfer;
+import com.atamanahmet.beamlink.peer.domain.FileTransfer;
+import com.atamanahmet.beamlink.peer.domain.enums.GroupTransferStatus;
+import com.atamanahmet.beamlink.peer.domain.enums.TransferStatus;
+import com.atamanahmet.beamlink.peer.exception.FileTransferException;
+import com.atamanahmet.beamlink.peer.repository.BatchTransferRepository;
+import lombok.RequiredArgsConstructor;
+import org.springframework.stereotype.Service;
+
+import java.time.Instant;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Optional;
+import java.util.UUID;
+
+@Service
+@RequiredArgsConstructor
+public class BatchTransferService implements GroupTransferService {
+
+    private final BatchTransferRepository batchTransferRepository;
+    private final FileTransferService fileTransferService;
+
+    public BatchTransfer create(
+            UUID batchTransferId,
+            UUID sourceDeviceId,
+            UUID targetDeviceId,
+            String targetIp,
+            int targetPort,
+            int totalFiles,
+            long totalSize,
+            UUID dispatchId
+    ) {
+        BatchTransfer bt = BatchTransfer.initiate(
+                batchTransferId, dispatchId, sourceDeviceId, targetDeviceId,
+                targetIp, targetPort, totalFiles, totalSize);
+        return batchTransferRepository.save(bt);
+    }
+
+    public Optional<BatchTransfer> findById(UUID batchTransferId) {
+        return batchTransferRepository.findById(batchTransferId);
+    }
+
+    public BatchTransfer get(UUID batchTransferId) {
+        return batchTransferRepository.findByBatchTransferId(batchTransferId)
+                .orElseThrow(() -> new FileTransferException(
+                        "Batch transfer not found: " + batchTransferId, null));
+    }
+
+    public BatchTransfer save(BatchTransfer batchTransfer) {
+        return batchTransferRepository.save(batchTransfer);
+    }
+
+    public void delete(BatchTransfer batchTransfer) {
+        batchTransferRepository.delete(batchTransfer);
+    }
+
+    public List<BatchTransfer> findAll() {
+        return batchTransferRepository.findAll();
+    }
+
+    public List<BatchTransfer> getAll() {
+        return batchTransferRepository.findAllByOrderByCreatedAtDesc();
+    }
+
+    /**
+     * Deletes every batch transfer row.
+     */
+    public void deleteAll() {
+        batchTransferRepository.deleteAll();
+    }
+
+    public long countByStatus(GroupTransferStatus status) {
+        return batchTransferRepository.countByStatus(status);
+    }
+
+    public void saveChildren(List<FileTransfer> fileTransfers) {
+        fileTransferService.saveAll(fileTransfers);
+    }
+
+    @Override
+    public UUID getGroupId() {
+        throw new UnsupportedOperationException(
+                "Use getStatus(UUID) and getOrderedQueue(UUID) directly");
+    }
+
+    @Override
+    public GroupTransferStatus getStatus(UUID groupId) {
+        return get(groupId).getStatus();
+    }
+
+    @Override
+    public List<FileTransfer> getOrderedQueue(UUID groupId) {
+        List<FileTransfer> children =
+                fileTransferService.findByBatchTransferId(groupId);
+
+        List<FileTransfer> queue = new ArrayList<>();
+        children.stream()
+                .filter(ft -> ft.getStatus() == TransferStatus.PAUSED)
+                .forEach(queue::add);
+        children.stream()
+                .filter(ft -> ft.getStatus() == TransferStatus.ACTIVE
+                        || ft.getStatus() == TransferStatus.PENDING)
+                .forEach(queue::add);
+        return queue;
+    }
+
+    @Override
+    public List<FileTransfer> getAllChildren(UUID groupId) {
+        return fileTransferService.findByBatchTransferId(groupId);
+    }
+
+    @Override
+    public void markActive(UUID groupId) {
+        BatchTransfer bt = get(groupId);
+        bt.setStatus(GroupTransferStatus.ACTIVE);
+        batchTransferRepository.save(bt);
+    }
+
+    @Override
+    public void markCompleted(UUID groupId) {
+        BatchTransfer bt = get(groupId);
+        bt.setStatus(GroupTransferStatus.COMPLETED);
+        bt.setCompletedAt(Instant.now());
+        batchTransferRepository.save(bt);
+    }
+
+    @Override
+    public void markPartial(UUID groupId) {
+        BatchTransfer bt = get(groupId);
+        bt.setStatus(GroupTransferStatus.PARTIAL);
+        batchTransferRepository.save(bt);
+    }
+
+    @Override
+    public void markFailed(UUID groupId) {
+        BatchTransfer bt = get(groupId);
+        bt.setStatus(GroupTransferStatus.FAILED);
+        batchTransferRepository.save(bt);
+    }
+
+    @Override
+    public void markCancelled(UUID groupId) {
+        BatchTransfer bt = get(groupId);
+        bt.setStatus(GroupTransferStatus.CANCELLED);
+        batchTransferRepository.save(bt);
+    }
+
+    @Override
+    public void applyChildStatusRollup(UUID groupId) {
+        BatchTransfer bt = get(groupId);
+        GroupTransferStatus status = GroupStatusRollup.fromChildren(
+                getAllChildren(groupId).stream().map(FileTransfer::getStatus).toList());
+        bt.setStatus(status);
+        if (status == GroupTransferStatus.COMPLETED) {
+            bt.setCompletedAt(Instant.now());
+        }
+        batchTransferRepository.save(bt);
+    }
+}
