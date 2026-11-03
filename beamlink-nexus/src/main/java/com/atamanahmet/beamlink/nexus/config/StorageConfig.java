@@ -18,11 +18,6 @@ public class StorageConfig {
         return Path.of(runtimeDir, "data", "uploads");
     }
 
-    public Path getDefaultTempDir() {
-
-        return Path.of(runtimeDir, "data", "temp");
-    }
-
     public Path getDefaultLogsDir() {
 
         return Path.of(runtimeDir, "logs");

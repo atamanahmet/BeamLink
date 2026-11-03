@@ -4,23 +4,26 @@ import com.atamanahmet.beamlink.nexus.domain.BatchTransfer;
 import com.atamanahmet.beamlink.nexus.domain.DirectoryTransfer;
 import com.atamanahmet.beamlink.nexus.domain.FileTransfer;
 import com.atamanahmet.beamlink.nexus.domain.enums.GroupTransferStatus;
+import com.atamanahmet.beamlink.nexus.domain.enums.PauseOwner;
 import com.atamanahmet.beamlink.nexus.domain.enums.TransferStatus;
 import com.atamanahmet.beamlink.nexus.dto.ChunkAckResponse;
 import com.atamanahmet.beamlink.nexus.dto.ReceiveBatchRequest;
 import com.atamanahmet.beamlink.nexus.dto.ReceiveDirectoryRequest;
 import com.atamanahmet.beamlink.nexus.exception.FileTransferException;
+import com.atamanahmet.beamlink.nexus.exception.InsufficientDiskException;
+import com.atamanahmet.beamlink.nexus.exception.OffsetMismatchException;
 import com.atamanahmet.beamlink.nexus.exception.TransferProtocolException;
-import com.atamanahmet.beamlink.nexus.repository.BatchTransferRepository;
-import com.atamanahmet.beamlink.nexus.repository.DirectoryTransferRepository;
-import com.atamanahmet.beamlink.nexus.repository.FileTransferRepository;
+import com.atamanahmet.beamlink.nexus.config.TransferProperties;
+import com.atamanahmet.beamlink.nexus.http.TransferHttpClient;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.io.InputStream;
-import java.io.OutputStream;
 import java.nio.file.Path;
 import java.time.Instant;
 import java.util.ArrayList;
@@ -37,29 +40,37 @@ public class ChunkReceiverService {
 
     private static final long RECEIVER_SAVE_INTERVAL_MS = 1000L;
 
-    private final FileTransferRepository fileTransferRepository;
+    private final FileTransferService fileTransferService;
     private final StorageService storageService;
     private final TransferLogService transferLogService;
-    private final DirectoryTransferRepository directoryTransferRepository;
-    private final BatchTransferRepository batchTransferRepository;
+    private final DirectoryTransferService directoryTransferService;
+    private final BatchTransferService batchTransferService;
     private final ReceiveFileChannels receiveFileChannels;
     private final ReceiveStallTracker receiveStallTracker;
+    private final TransferHttpClient transferHttpClient;
+    private final TransferProperties transferProperties;
+    private final DiskReserveProvider diskReserveProvider;
 
     private final ConcurrentHashMap<UUID, Long> liveConfirmedOffset = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<UUID, Long> lastReceiverSaveAt = new ConcurrentHashMap<>();
-    private final ConcurrentHashMap<UUID, TempP0Receiver> tempP0ByTransfer = new ConcurrentHashMap<>();
 
     @Transactional
     public void prepareReceive(FileTransfer transfer) {
-        if (transfer.getFileSize() <= 0) {
-            throw new FileTransferException("Invalid file size: " + transfer.getFileSize(), null);
+        FileSizeRule.requireValid(transfer.getFileSize());
+
+        long required = transfer.getFileSize() - transfer.getConfirmedOffset();
+        if (required < 0L) {
+            required = 0L;
         }
+        requireRoom(required);
 
         Path partialFile = storageService.resolvePartialPath(transfer.getFileName());
         storageService.allocatePartialFile(partialFile, transfer.getFileSize());
-        fileTransferRepository.save(transfer);
+        transfer.setFilePath(partialFile.toString());
+        fileTransferService.save(transfer);
         receiveStallTracker.touch(transfer.getTransferId());
         log.info("Prepared to receive: {} ({} bytes)", transfer.getFileName(), transfer.getFileSize());
+        completeReceiveIfEmpty(transfer);
     }
 
     @Transactional
@@ -67,7 +78,7 @@ public class ChunkReceiverService {
         DirectoryTransfer dt = DirectoryTransfer.initiate(
                 request.getDirectoryTransferId(),
                 request.getDispatchId(),
-                request.getSourceAgentId(),
+                request.getSourceDeviceId(),
                 null,
                 null,
                 0,
@@ -80,7 +91,14 @@ public class ChunkReceiverService {
                         : Collections.emptyList()
         );
         dt.setStatus(GroupTransferStatus.ACTIVE);
-        directoryTransferRepository.save(dt);
+
+        long required = 0L;
+        for (ReceiveDirectoryRequest.FileEntry entry : request.getFiles()) {
+            required += FileSizeRule.requireValid(entry.getFileSize());
+        }
+        requireRoom(required);
+
+        directoryTransferService.save(dt);
 
         Path dirRoot = storageService.getUploadsDir().resolve(request.getDirectoryName());
         for (String emptyDir : dt.getEmptyDirectories()) {
@@ -89,17 +107,14 @@ public class ChunkReceiverService {
 
         List<FileTransfer> fileTransfers = new ArrayList<>();
         for (ReceiveDirectoryRequest.FileEntry entry : request.getFiles()) {
-            if (entry.getFileSize() <= 0) {
-                throw new FileTransferException("Invalid file size for: " + entry.getFileName(), null);
-            }
-
+            long fileSize = FileSizeRule.requireValid(entry.getFileSize());
             FileTransfer ft = FileTransfer.initiate(
                     entry.getTransferId(),
-                    request.getSourceAgentId(),
+                    request.getSourceDeviceId(),
                     null,
                     entry.getFileName(),
                     null,
-                    entry.getFileSize()
+                    fileSize
             );
             ft.setDirectoryTransferId(request.getDirectoryTransferId());
             ft.setRelativePath(entry.getRelativePath());
@@ -107,13 +122,15 @@ public class ChunkReceiverService {
             ft.setStatus(TransferStatus.ACTIVE);
 
             Path partialFile = storageService.resolvePartialPath(entry.getFileName());
-            storageService.allocatePartialFile(partialFile, entry.getFileSize());
+            storageService.allocatePartialFile(partialFile, fileSize);
+            ft.setFilePath(partialFile.toString());
             fileTransfers.add(ft);
         }
 
-        fileTransferRepository.saveAll(fileTransfers);
+        fileTransferService.saveAll(fileTransfers);
         for (FileTransfer ft : fileTransfers) {
             receiveStallTracker.touch(ft.getTransferId());
+            completeReceiveIfEmpty(ft);
         }
         log.info("Prepared to receive directory: {} ({} files)", request.getDirectoryName(), fileTransfers.size());
     }
@@ -123,7 +140,7 @@ public class ChunkReceiverService {
         BatchTransfer bt = BatchTransfer.initiate(
                 request.getBatchTransferId(),
                 request.getDispatchId(),
-                request.getSourceAgentId(),
+                request.getSourceDeviceId(),
                 null,
                 null,
                 0,
@@ -131,43 +148,53 @@ public class ChunkReceiverService {
                 request.getTotalSize()
         );
         bt.setStatus(GroupTransferStatus.ACTIVE);
-        batchTransferRepository.save(bt);
+
+        long required = 0L;
+        for (ReceiveBatchRequest.FileEntry entry : request.getFiles()) {
+            required += FileSizeRule.requireValid(entry.getFileSize());
+        }
+        requireRoom(required);
+
+        batchTransferService.save(bt);
 
         List<FileTransfer> fileTransfers = new ArrayList<>();
         for (ReceiveBatchRequest.FileEntry entry : request.getFiles()) {
-            if (entry.getFileSize() <= 0) {
-                throw new FileTransferException("Invalid file size for: " + entry.getFileName(), null);
-            }
-
+            long fileSize = FileSizeRule.requireValid(entry.getFileSize());
             FileTransfer ft = FileTransfer.initiate(
                     entry.getTransferId(),
-                    request.getSourceAgentId(),
+                    request.getSourceDeviceId(),
                     null,
                     entry.getFileName(),
                     null,
-                    entry.getFileSize()
+                    fileSize
             );
             ft.setBatchTransferId(request.getBatchTransferId());
             ft.setStatus(TransferStatus.ACTIVE);
 
             Path partialFile = storageService.resolvePartialPath(entry.getFileName());
-            storageService.allocatePartialFile(partialFile, entry.getFileSize());
+            storageService.allocatePartialFile(partialFile, fileSize);
+            ft.setFilePath(partialFile.toString());
             fileTransfers.add(ft);
         }
 
-        fileTransferRepository.saveAll(fileTransfers);
+        fileTransferService.saveAll(fileTransfers);
         for (FileTransfer ft : fileTransfers) {
             receiveStallTracker.touch(ft.getTransferId());
+            completeReceiveIfEmpty(ft);
         }
         log.info("Prepared to receive batch: {} ({} files)", request.getBatchTransferId(), fileTransfers.size());
     }
 
     /**
-     * Writes one chunk. DB progress saved at most once per second, always on complete.
+     * Hashes chunk bytes then writes. DB progress saved at most once per second, always on complete.
      */
     public ChunkAckResponse receiveChunk(
-            UUID transferId, long offset, long length, InputStream chunkStream) {
-        FileTransfer transfer = fileTransferRepository.findByTransferId(transferId)
+            UUID transferId,
+            long offset,
+            long length,
+            InputStream chunkStream,
+            String chunkSha256Header) {
+        FileTransfer transfer = fileTransferService.findByTransferId(transferId)
                 .orElseThrow(() -> new FileTransferException("Transfer not found: " + transferId, null));
 
         if (transfer.getStatus() == TransferStatus.PAUSED) {
@@ -182,36 +209,63 @@ public class ChunkReceiverService {
             throw new FileTransferException("Transfer is not active: " + transfer.getStatus(), null);
         }
 
+        int maxChunk = transferProperties.getChunkSizeBytes();
+        if (length < 0L || length > maxChunk) {
+            throw new TransferProtocolException(
+                    "INVALID_CHUNK_LENGTH",
+                    "Chunk length out of bounds",
+                    HttpStatus.BAD_REQUEST);
+        }
+
+        byte[] chunkBytes;
+        try {
+            chunkBytes = readExact(chunkStream, (int) length);
+        } catch (IOException e) {
+            throw new FileTransferException("Failed to read chunk body", e);
+        }
+
+        ChunkChecksumRule.Result hashResult = ChunkChecksumRule.check(chunkSha256Header, chunkBytes);
+        if (hashResult == ChunkChecksumRule.Result.MISSING) {
+            throw new TransferProtocolException(
+                    "MISSING_CHUNK_SHA256",
+                    "X-Chunk-SHA256 header required",
+                    HttpStatus.BAD_REQUEST);
+        }
+        if (hashResult == ChunkChecksumRule.Result.MISMATCH) {
+            throw new TransferProtocolException(
+                    "CHUNK_CHECKSUM_MISMATCH",
+                    "Chunk checksum mismatch",
+                    HttpStatus.UNPROCESSABLE_ENTITY);
+        }
+
         long expected = liveConfirmedOffset.getOrDefault(transferId, transfer.getConfirmedOffset());
         ReceiveOffsetRule.Decision decision = ReceiveOffsetRule.decide(offset, length, expected);
         if (decision == ReceiveOffsetRule.Decision.DUPLICATE) {
-            try {
-                chunkStream.transferTo(OutputStream.nullOutputStream());
-            } catch (IOException e) {
-                throw new FileTransferException("Failed to drain duplicate chunk", e);
-            }
             return new ChunkAckResponse(expected, expected >= transfer.getFileSize());
         }
         if (decision != ReceiveOffsetRule.Decision.ACCEPT) {
-            tempP0(transferId).rejectedOoo.incrementAndGet();
-            throw new FileTransferException(
-                    "Unexpected offset. Expected: " + expected + " got: " + offset, null);
+            throw new OffsetMismatchException(expected);
         }
 
-        Path partialFile = storageService.resolvePartialPath(transfer.getFileName());
+        if (!hasRoom(length)) {
+            pauseForInsufficientDisk(transfer);
+            throw new InsufficientDiskException();
+        }
+
+        Path partialFile = storageService.storedPartialPath(transfer);
         long bytesWritten;
         try {
-            long writeStart = System.nanoTime();
             bytesWritten = receiveFileChannels.write(
-                    transferId, partialFile, offset, chunkStream);
-            tempP0(transferId).writeMs.addAndGet((System.nanoTime() - writeStart) / 1_000_000L);
+                    transferId, partialFile, offset, new ByteArrayInputStream(chunkBytes));
         } catch (RuntimeException e) {
+            if (causedByIo(e) && !hasRoom(length)) {
+                pauseForInsufficientDisk(transfer);
+                throw new InsufficientDiskException();
+            }
             receiveFileChannels.close(transferId);
             receiveStallTracker.remove(transferId);
-            logTempP0Summary(transferId, "failure");
             throw e;
         }
-        tempP0(transferId).accepted.incrementAndGet();
         long newOffset = offset + bytesWritten;
         Instant now = Instant.now();
 
@@ -227,13 +281,18 @@ public class ChunkReceiverService {
 
         boolean complete = newOffset >= transfer.getFileSize();
         if (complete) {
-            transfer.setStatus(TransferStatus.COMPLETED);
-            fileTransferRepository.save(transfer);
             receiveFileChannels.close(transferId);
+            if (!verifyFinalSizeOrFail(transfer, transferId)) {
+                throw new TransferProtocolException(
+                        "SIZE_MISMATCH",
+                        "Confirmed size does not match expected size",
+                        HttpStatus.CONFLICT);
+            }
+            transfer.setStatus(TransferStatus.COMPLETED);
+            fileTransferService.save(transfer);
             storageService.moveToFinalLocation(transfer);
             logCompletedTransfer(transfer);
             log.info("Transfer completed: {}", transfer.getFileName());
-            logTempP0Summary(transferId, "complete");
             liveConfirmedOffset.remove(transferId);
             lastReceiverSaveAt.remove(transferId);
             receiveStallTracker.remove(transferId);
@@ -242,7 +301,7 @@ public class ChunkReceiverService {
             long nowMs = System.currentTimeMillis();
             Long last = lastReceiverSaveAt.get(transferId);
             if (last == null || nowMs - last >= RECEIVER_SAVE_INTERVAL_MS) {
-                fileTransferRepository.save(transfer);
+                fileTransferService.save(transfer);
                 lastReceiverSaveAt.put(transferId, nowMs);
             }
         }
@@ -251,20 +310,82 @@ public class ChunkReceiverService {
     }
 
     /**
+     * Reads exactly length bytes from the stream into a new buffer.
+     */
+    private static byte[] readExact(InputStream in, int length) throws IOException {
+        byte[] buf = new byte[length];
+        int off = 0;
+        while (off < length) {
+            int n = in.read(buf, off, length - off);
+            if (n < 0) {
+                throw new IOException("Unexpected end of chunk body at " + off + " of " + length);
+            }
+            off += n;
+        }
+        return buf;
+    }
+
+    /**
+     * Moves a 0 byte receive to COMPLETED. No chunks will arrive.
+     */
+    private void completeReceiveIfEmpty(FileTransfer transfer) {
+        if (transfer.getFileSize() != 0L) {
+            return;
+        }
+        transfer.setStatus(TransferStatus.COMPLETED);
+        fileTransferService.save(transfer);
+        storageService.moveToFinalLocation(transfer);
+        logCompletedTransfer(transfer);
+        log.info("Transfer completed: {}", transfer.getFileName());
+        receiveStallTracker.remove(transfer.getTransferId());
+        checkAndCompleteParent(transfer);
+    }
+
+    /**
+     * Last chunk: confirmed bytes must equal file size. Marks FAILED on mismatch.
+     */
+    private boolean verifyFinalSizeOrFail(FileTransfer transfer, UUID transferId) {
+        if (FinalSizeRule.matches(transfer.getConfirmedOffset(), transfer.getFileSize())) {
+            return true;
+        }
+        log.warn("Size mismatch for transfer {}: confirmed={} expected={}",
+                transferId, transfer.getConfirmedOffset(), transfer.getFileSize());
+        markSizeMismatch(transfer, transferId);
+        return false;
+    }
+
+    private void markSizeMismatch(FileTransfer transfer, UUID transferId) {
+        storageService.deletePartialFile(transfer);
+        transfer.setStatus(TransferStatus.FAILED);
+        transfer.setFailureReason("SIZE_MISMATCH");
+        fileTransferService.save(transfer);
+        liveConfirmedOffset.remove(transferId);
+        lastReceiverSaveAt.remove(transferId);
+        receiveStallTracker.remove(transferId);
+        if (transfer.getSourceIp() != null && transfer.getSourcePort() != null) {
+            transferHttpClient.notifyFailToPeer(
+                    transfer.getSourceIp(),
+                    transfer.getSourcePort(),
+                    transferId,
+                    "SIZE_MISMATCH");
+        }
+        checkAndCompleteParent(transfer);
+    }
+
+    /**
      * Flushes live confirmedOffset to DB and closes the receive channel.
      */
     @Transactional
     public void onReceivePaused(UUID transferId) {
-        fileTransferRepository.findByTransferId(transferId).ifPresent(ft -> {
+        fileTransferService.findByTransferId(transferId).ifPresent(ft -> {
             long live = liveConfirmedOffset.getOrDefault(transferId, ft.getConfirmedOffset());
             ft.setConfirmedOffset(live);
-            fileTransferRepository.save(ft);
+            fileTransferService.save(ft);
             liveConfirmedOffset.put(transferId, live);
             lastReceiverSaveAt.remove(transferId);
         });
         receiveFileChannels.close(transferId);
         receiveStallTracker.remove(transferId);
-        logTempP0Summary(transferId, "pause");
     }
 
     private void logCompletedTransfer(FileTransfer transfer) {
@@ -273,7 +394,7 @@ public class ChunkReceiverService {
                     ? (double) transfer.getFileSize() * 8.0 / transfer.getActiveTransferMs() / 1000.0
                     : 0.0;
             transferLogService.logTransfer(
-                    transfer.getSourceAgentId(),
+                    transfer.getSourceDeviceId(),
                     null,
                     transfer.getFileName(),
                     transfer.getFileSize(),
@@ -288,12 +409,12 @@ public class ChunkReceiverService {
     protected void checkAndCompleteParent(FileTransfer transfer) {
         if (transfer.getBatchTransferId() != null) {
             UUID batchId = transfer.getBatchTransferId();
-            List<FileTransfer> siblings = fileTransferRepository.findByBatchTransferId(batchId);
+            List<FileTransfer> siblings = fileTransferService.findByBatchTransferId(batchId);
             if (hasInProgressChild(siblings)) {
                 return;
             }
 
-            BatchTransfer bt = batchTransferRepository.findById(batchId).orElse(null);
+            BatchTransfer bt = batchTransferService.findById(batchId).orElse(null);
             if (bt == null) {
                 return;
             }
@@ -304,18 +425,18 @@ public class ChunkReceiverService {
             if (status == GroupTransferStatus.COMPLETED) {
                 bt.setCompletedAt(Instant.now());
             }
-            batchTransferRepository.save(bt);
+            batchTransferService.save(bt);
             log.info("Batch rollup on receiver: {} -> {}", batchId, status);
         }
 
         if (transfer.getDirectoryTransferId() != null) {
             UUID dirId = transfer.getDirectoryTransferId();
-            List<FileTransfer> siblings = fileTransferRepository.findByDirectoryTransferId(dirId);
+            List<FileTransfer> siblings = fileTransferService.findByDirectoryTransferId(dirId);
             if (hasInProgressChild(siblings)) {
                 return;
             }
 
-            DirectoryTransfer dt = directoryTransferRepository.findById(dirId).orElse(null);
+            DirectoryTransfer dt = directoryTransferService.findById(dirId).orElse(null);
             if (dt == null) {
                 return;
             }
@@ -326,7 +447,7 @@ public class ChunkReceiverService {
             if (status == GroupTransferStatus.COMPLETED) {
                 dt.setCompletedAt(Instant.now());
             }
-            directoryTransferRepository.save(dt);
+            directoryTransferService.save(dt);
             log.info("Directory rollup on receiver: {} -> {}", dirId, status);
         }
     }
@@ -345,26 +466,49 @@ public class ChunkReceiverService {
         if (live != null) {
             return live;
         }
-        return fileTransferRepository.findByTransferId(transferId)
+        return fileTransferService.findByTransferId(transferId)
                 .orElseThrow(() -> new FileTransferException("Transfer not found: " + transferId, null))
                 .getConfirmedOffset();
     }
 
     @Transactional
     public void cancelReceive(UUID transferId) {
-        fileTransferRepository.findByTransferId(transferId).ifPresent(ft -> {
+        fileTransferService.findByTransferId(transferId).ifPresent(ft -> {
             if (ft.getStatus() == TransferStatus.ACTIVE
                     || ft.getStatus() == TransferStatus.PAUSED) {
                 long live = liveConfirmedOffset.getOrDefault(transferId, ft.getConfirmedOffset());
                 ft.setConfirmedOffset(live);
                 ft.setStatus(TransferStatus.CANCELLED);
-                fileTransferRepository.save(ft);
+                fileTransferService.save(ft);
                 receiveFileChannels.close(transferId);
-                storageService.deletePartialFile(ft.getFileName());
+                storageService.deletePartialFile(ft);
                 liveConfirmedOffset.remove(transferId);
                 lastReceiverSaveAt.remove(transferId);
                 receiveStallTracker.remove(transferId);
-                logTempP0Summary(transferId, "cancel");
+            }
+        });
+    }
+
+    /**
+     * Peer fail-notify: mark receive side FAILED and delete partial.
+     */
+    @Transactional
+    public void failReceive(UUID transferId, String reason) {
+        fileTransferService.findByTransferId(transferId).ifPresent(ft -> {
+            if (ft.getStatus() == TransferStatus.ACTIVE
+                    || ft.getStatus() == TransferStatus.PAUSED
+                    || ft.getStatus() == TransferStatus.PENDING) {
+                long live = liveConfirmedOffset.getOrDefault(transferId, ft.getConfirmedOffset());
+                ft.setConfirmedOffset(live);
+                ft.setStatus(TransferStatus.FAILED);
+                ft.setFailureReason(reason);
+                fileTransferService.save(ft);
+                receiveFileChannels.close(transferId);
+                storageService.deletePartialFile(ft);
+                liveConfirmedOffset.remove(transferId);
+                lastReceiverSaveAt.remove(transferId);
+                receiveStallTracker.remove(transferId);
+                checkAndCompleteParent(ft);
             }
         });
     }
@@ -379,37 +523,59 @@ public class ChunkReceiverService {
         receiveStallTracker.remove(transferId);
     }
 
-    private TempP0Receiver tempP0(UUID transferId) {
-        return tempP0ByTransfer.computeIfAbsent(transferId, id -> new TempP0Receiver());
+    /**
+     * True when usable space covers bytesNeeded plus the reserve.
+     */
+    private boolean hasRoom(long bytesNeeded) {
+        return DiskReserveRule.allowed(
+                storageService.usableBytes(),
+                bytesNeeded,
+                diskReserveProvider.getBytes());
     }
 
     /**
-     * TEMP-P0 one summary line for receiver counters.
+     * Prepare-time refusal. Does not pause a row.
      */
-    private void logTempP0Summary(UUID transferId, String event) {
-        TempP0Receiver c = tempP0ByTransfer.get(transferId);
-        long accepted = c == null ? 0L : c.accepted.get();
-        long rejectedOoo = c == null ? 0L : c.rejectedOoo.get();
-        long writeMs = c == null ? 0L : c.writeMs.get();
-        log.info(
-                "TEMP-P0 receiver event={} transferId={} accepted={} rejectedOoo={} writeMs={} openCount={} closeCount={}",
-                event,
-                transferId,
-                accepted,
-                rejectedOoo,
-                writeMs,
-                receiveFileChannels.tempP0OpenCount(transferId),
-                receiveFileChannels.tempP0CloseCount(transferId));
-        tempP0ByTransfer.remove(transferId);
-        receiveFileChannels.clearTempP0Counts(transferId);
+    private void requireRoom(long bytesNeeded) {
+        if (!hasRoom(bytesNeeded)) {
+            throw new InsufficientDiskException();
+        }
     }
 
     /**
-     * TEMP-P0 per-transfer receiver counters.
+     * True when an IOException caused this runtime failure.
      */
-    private static final class TempP0Receiver {
-        private final AtomicLong accepted = new AtomicLong();
-        private final AtomicLong rejectedOoo = new AtomicLong();
-        private final AtomicLong writeMs = new AtomicLong();
+    private static boolean causedByIo(Throwable error) {
+        for (Throwable t = error; t != null; t = t.getCause()) {
+            if (t instanceof IOException) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * Pauses the receive row, keeps the partial, tells the sender.
+     */
+    private void pauseForInsufficientDisk(FileTransfer transfer) {
+        UUID transferId = transfer.getTransferId();
+        long live = liveConfirmedOffset.getOrDefault(transferId, transfer.getConfirmedOffset());
+        transfer.setConfirmedOffset(live);
+        transfer.setStatus(TransferStatus.PAUSED);
+        transfer.setPausedBy(PauseOwner.TARGET);
+        transfer.setFailureReason(DiskReserveRule.CODE);
+        fileTransferService.save(transfer);
+        liveConfirmedOffset.put(transferId, live);
+        receiveFileChannels.close(transferId);
+        receiveStallTracker.remove(transferId);
+        lastReceiverSaveAt.remove(transferId);
+        if (transfer.getSourceIp() != null && transfer.getSourcePort() != null) {
+            transferHttpClient.notifyPauseToPeer(
+                    transfer.getSourceIp(),
+                    transfer.getSourcePort(),
+                    transferId,
+                    PauseOwner.TARGET,
+                    DiskReserveRule.CODE);
+        }
     }
 }

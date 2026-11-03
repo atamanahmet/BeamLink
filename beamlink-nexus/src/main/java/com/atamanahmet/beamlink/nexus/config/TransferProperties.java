@@ -18,8 +18,4 @@ public class TransferProperties {
     @Min(65_536)
     @Max(8_388_608)
     private int chunkSizeBytes = 524_288;
-
-    @Min(1)
-    @Max(16)
-    private int windowSize = 1;
 }

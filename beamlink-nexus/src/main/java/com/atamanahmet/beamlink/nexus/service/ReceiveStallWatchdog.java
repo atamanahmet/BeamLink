@@ -3,7 +3,6 @@ package com.atamanahmet.beamlink.nexus.service;
 import com.atamanahmet.beamlink.nexus.constants.TransferConstants;
 import com.atamanahmet.beamlink.nexus.domain.FileTransfer;
 import com.atamanahmet.beamlink.nexus.domain.enums.PauseOwner;
-import com.atamanahmet.beamlink.nexus.repository.FileTransferRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.scheduling.annotation.Scheduled;
@@ -22,7 +21,7 @@ import java.util.UUID;
 public class ReceiveStallWatchdog {
 
     private final ReceiveStallTracker receiveStallTracker;
-    private final FileTransferRepository fileTransferRepository;
+    private final FileTransferService fileTransferService;
     private final TransferSideResolver sideResolver;
     private final TransferManagementService transferManagementService;
 
@@ -35,13 +34,13 @@ public class ReceiveStallWatchdog {
         Instant now = Instant.now();
         for (Map.Entry<UUID, Instant> entry : receiveStallTracker.snapshot().entrySet()) {
             UUID transferId = entry.getKey();
-            FileTransfer ft = fileTransferRepository.findByTransferId(transferId).orElse(null);
+            FileTransfer ft = fileTransferService.findByTransferId(transferId).orElse(null);
             if (ft == null) {
                 receiveStallTracker.remove(transferId);
                 continue;
             }
             PauseOwner side = sideResolver.resolve(
-                    ft.getSourceAgentId(), ft.getTargetAgentId(), ft.getTargetIp());
+                    ft.getSourceDeviceId(), ft.getTargetDeviceId(), ft.getTargetIp());
             if (side != PauseOwner.TARGET) {
                 receiveStallTracker.remove(transferId);
                 continue;

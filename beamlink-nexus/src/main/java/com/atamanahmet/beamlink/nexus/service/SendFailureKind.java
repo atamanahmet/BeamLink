@@ -6,5 +6,7 @@ package com.atamanahmet.beamlink.nexus.service;
 public enum SendFailureKind {
     OFFLINE,
     RETRY,
+    RESYNC,
+    CHUNK_CORRUPT,
     FATAL
 }

@@ -13,7 +13,6 @@ import java.nio.file.StandardOpenOption;
 import java.util.ArrayList;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.atomic.AtomicLong;
 
 /**
  * Keeps one FileChannel per active receive transfer for positional writes.
@@ -25,14 +24,12 @@ public class ReceiveFileChannels implements DisposableBean {
     private static final int BUFFER_SIZE = 8192;
 
     private final ConcurrentHashMap<UUID, FileChannel> channels = new ConcurrentHashMap<>();
-    private final ConcurrentHashMap<UUID, AtomicLong> openCounts = new ConcurrentHashMap<>();
-    private final ConcurrentHashMap<UUID, AtomicLong> closeCounts = new ConcurrentHashMap<>();
 
     /**
      * Writes a chunk at offset. Opens the channel on first use for this transfer.
      */
     public long write(UUID transferId, Path path, long offset, InputStream stream) {
-        FileChannel channel = channels.computeIfAbsent(transferId, id -> open(id, path));
+        FileChannel channel = channels.computeIfAbsent(transferId, id -> open(path));
         long bytesWritten = 0;
         byte[] buffer = new byte[BUFFER_SIZE];
         try {
@@ -65,7 +62,6 @@ public class ReceiveFileChannels implements DisposableBean {
         if (channel == null) {
             return;
         }
-        closeCounts.computeIfAbsent(transferId, id -> new AtomicLong()).incrementAndGet();
         try {
             channel.close();
         } catch (IOException e) {
@@ -74,27 +70,12 @@ public class ReceiveFileChannels implements DisposableBean {
     }
 
     /**
-     * TEMP-P0 open count for one transfer.
+     * Closes every open receive channel.
      */
-    public long tempP0OpenCount(UUID transferId) {
-        AtomicLong n = openCounts.get(transferId);
-        return n == null ? 0L : n.get();
-    }
-
-    /**
-     * TEMP-P0 close count for one transfer.
-     */
-    public long tempP0CloseCount(UUID transferId) {
-        AtomicLong n = closeCounts.get(transferId);
-        return n == null ? 0L : n.get();
-    }
-
-    /**
-     * Clears TEMP-P0 open and close counts for one transfer.
-     */
-    public void clearTempP0Counts(UUID transferId) {
-        openCounts.remove(transferId);
-        closeCounts.remove(transferId);
+    public void closeAll() {
+        for (UUID id : new ArrayList<>(channels.keySet())) {
+            close(id);
+        }
     }
 
     /**
@@ -102,13 +83,10 @@ public class ReceiveFileChannels implements DisposableBean {
      */
     @Override
     public void destroy() {
-        for (UUID id : new ArrayList<>(channels.keySet())) {
-            close(id);
-        }
+        closeAll();
     }
 
-    private FileChannel open(UUID transferId, Path path) {
-        openCounts.computeIfAbsent(transferId, id -> new AtomicLong()).incrementAndGet();
+    private FileChannel open(Path path) {
         try {
             return FileChannel.open(path, StandardOpenOption.WRITE);
         } catch (IOException e) {

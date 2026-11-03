@@ -1,10 +1,12 @@
 package com.atamanahmet.beamlink.nexus.controller;
 
+import com.atamanahmet.beamlink.nexus.constants.TransferConstants;
 import com.atamanahmet.beamlink.nexus.domain.FileTransfer;
 import com.atamanahmet.beamlink.nexus.domain.enums.TransferStatus;
 import com.atamanahmet.beamlink.nexus.dto.*;
 import com.atamanahmet.beamlink.nexus.exception.FileTransferException;
 import com.atamanahmet.beamlink.nexus.service.ChunkReceiverService;
+import com.atamanahmet.beamlink.nexus.service.FileSizeRule;
 import com.atamanahmet.beamlink.nexus.service.TransferManagementService;
 import com.atamanahmet.beamlink.nexus.service.TransferSenderService;
 import jakarta.servlet.http.HttpServletRequest;
@@ -36,13 +38,14 @@ public class TransferInboundController {
     @PostMapping("/receive")
     public ResponseEntity<Void> prepareReceive(@RequestBody PrepareReceiveRequest request) {
 
+        long fileSize = FileSizeRule.requireValid(request.getFileSize());
         FileTransfer transfer = FileTransfer.initiate(
                 request.getTransferId(),
-                request.getSourceAgentId(),
+                request.getSourceDeviceId(),
                 null,
                 request.getFileName(),
                 null,
-                request.getFileSize()
+                fileSize
         );
         transfer.setSourceIp(request.getSourceIp());
         transfer.setSourcePort(request.getSourcePort());
@@ -75,17 +78,19 @@ public class TransferInboundController {
     }
 
     /**
-     * Receives a raw chunk and writes it to disk at the correct offset
+     * Receives a raw chunk, verifies X-Chunk-SHA256, then writes at offset.
      */
     @PatchMapping("/{transferId}/chunk")
     public ResponseEntity<ChunkAckResponse> receiveChunk(
             @PathVariable UUID transferId,
             @RequestHeader("Content-Range") String contentRange,
+            @RequestHeader(value = TransferConstants.CHUNK_SHA256_HEADER, required = false)
+            String chunkSha256,
             HttpServletRequest request) throws IOException {
 
         long[] range = parseContentRange(contentRange);
         ChunkAckResponse ack = receiverService.receiveChunk(
-                transferId, range[0], range[1], request.getInputStream());
+                transferId, range[0], range[1], request.getInputStream(), chunkSha256);
 
         return ResponseEntity.status(HttpStatus.OK).body(ack);
     }
@@ -132,13 +137,26 @@ public class TransferInboundController {
     }
 
     /**
+     * Peer notifies us to mark our side FAILED with the same reason
+     */
+    @PostMapping("/{transferId}/fail-notify")
+    public ResponseEntity<Void> failNotify(
+            @PathVariable UUID transferId,
+            @RequestBody Map<String, String> body) {
+        String reason = body != null ? body.get("reason") : null;
+        receiverService.failReceive(transferId, reason);
+        senderService.applyFailNotify(transferId, reason);
+        return ResponseEntity.ok().build();
+    }
+
+    /**
      * Peer notifies us to pause our side of the transfer
      */
     @PostMapping("/{transferId}/pause-notify")
     public ResponseEntity<Void> pauseNotify(
             @PathVariable UUID transferId,
             @RequestBody PauseNotifyRequest request) {
-        managementService.applyPauseNotify(transferId, request.getPausedBy());
+        managementService.applyPauseNotify(transferId, request.getPausedBy(), request.getReason());
         return ResponseEntity.ok().build();
     }
 
