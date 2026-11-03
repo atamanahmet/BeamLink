@@ -3,14 +3,14 @@
   "private": true,
   "packageManager": "pnpm@12.10.1",
   "scripts": {
-    "dev:peer": "pnpm --filter agent dev",
+    "dev:peer": "pnpm --filter peer dev",
     "dev:nexus": "pnpm --filter nexus dev",
     "build": "pnpm -r build",
     "lint": "pnpm -r --no-bail lint",
     "typecheck": "pnpm -r typecheck",
     "test": "vitest run",
 
-    "dist:peer": "pnpm --filter agent dist",
+    "dist:peer": "pnpm --filter peer dist",
     "dist:nexus": "pnpm --filter nexus dist"
   },
   "devDependencies": {

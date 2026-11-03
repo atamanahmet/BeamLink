@@ -6,22 +6,33 @@ export type DispatchResultItem = {
   type: TransferType;
 };
 
+export type InitiateDispatchResponse = {
+  items: DispatchResultItem[];
+  skippedCount: number;
+};
+
 export type InitiateDispatchRequest = {
   paths: string[];
-  targetAgentId: string;
+  targetDeviceId: string;
   targetIp: string;
   targetPort: number;
 };
 
 export type TransferLogEntry = {
   id: string;
-  fromAgentId: string;
-  fromAgentName: string;
-  toAgentId: string;
-  toAgentName: string;
+  fromDeviceId: string;
+  fromDeviceName: string;
+  toDeviceId: string;
+  toDeviceName: string;
   filename: string;
   fileSize: number;
   timestamp: string;
+};
+
+export type TransferListPage = {
+  items: TransferSummary[];
+  total: number;
+  hasMore: boolean;
 };
 
 /**
@@ -29,6 +40,11 @@ export type TransferLogEntry = {
  */
 export interface TransferApi {
   getAllTransfers: () => Promise<TransferSummary[]>;
+  /** Optional paged list for nexus admin. */
+  getTransfersPage?: (
+    page: number,
+    size?: number,
+  ) => Promise<TransferListPage>;
   getTransferLogs: () => Promise<TransferLogEntry[]>;
   getRecentTransferLogs: (limit?: number) => Promise<TransferLogEntry[]>;
   getChildTransfers: (
@@ -37,7 +53,7 @@ export interface TransferApi {
   ) => Promise<TransferSummary[]>;
   initiateDispatch: (
     req: InitiateDispatchRequest,
-  ) => Promise<DispatchResultItem[]>;
+  ) => Promise<InitiateDispatchResponse>;
   pauseTransfer: (id: string, type: TransferType) => Promise<void>;
   resumeTransfer: (id: string, type: TransferType) => Promise<void>;
   cancelTransfer: (id: string, type: TransferType) => Promise<void>;
@@ -85,6 +101,12 @@ export type ChangeCredentialsRequest = {
   newPassword: string;
 };
 
+export type DeviceReRegisterResult = {
+  nexusRemoved: boolean;
+  state: string;
+  message: string;
+};
+
 /**
  * Settings screen storage, speed cap, credentials and logs.
  */
@@ -97,7 +119,12 @@ export interface SettingsApi {
   putTotalSpeedLimit: (value: number | null) => Promise<void>;
   getResumePolicy: () => Promise<ResumePolicyResponse>;
   putResumePolicy: (value: ResumePolicyMode) => Promise<void>;
+  getMinFreeSpace: () => Promise<{ value: number }>;
+  putMinFreeSpace: (value: number) => Promise<void>;
   openUploadsFolder: () => Promise<void>;
   openLogs: () => Promise<void>;
   changeCredentials: (req: ChangeCredentialsRequest) => Promise<void>;
+  reRegister?: (force?: boolean) => Promise<DeviceReRegisterResult>;
+  resetNetworkData?: (force?: boolean) => Promise<void>;
+  factoryReset?: (force?: boolean) => Promise<void>;
 }

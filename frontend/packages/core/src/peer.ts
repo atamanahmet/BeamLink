@@ -1,7 +1,9 @@
 export type PeerSummary = {
   id: string;
-  agentName: string;
+  deviceName: string;
   ipAddress: string;
   port: number;
   online: boolean;
+  tlsPort?: number | null;
+  tlsFingerprint?: string | null;
 };

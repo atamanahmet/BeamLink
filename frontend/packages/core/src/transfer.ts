@@ -11,8 +11,8 @@ export type TransferSummary = {
   totalSize: number;
   confirmedBytes: number;
   totalFiles: number;
-  sourceAgentId: string | null;
-  targetAgentId: string;
+  sourceDeviceId: string | null;
+  targetDeviceId: string;
   targetIp: string;
   targetPort: number;
   createdAt: string;
