@@ -84,7 +84,11 @@ export function ResumePolicySection({
           <StatusMessage type="success" message="Resume policy updated." />
         ) : null}
         {resumePolicy.error ? (
-          <StatusMessage type="error" message={resumePolicy.error} />
+          <StatusMessage
+            type="error"
+            message={resumePolicy.error}
+            correlationId={resumePolicy.correlationId}
+          />
         ) : null}
       </Stack>
     </Paper>

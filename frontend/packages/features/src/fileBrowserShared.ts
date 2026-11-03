@@ -21,8 +21,8 @@ export type FileBrowserModalProps = {
   onConfirm: (paths: string[]) => void;
   title?: string;
   /**
-   * "multi"  — default, files + folders, multi-select (existing behaviour)
-   * "folder" — single folder picker for directory selection
+   * "multi": default, files + folders, multi-select (existing behaviour)
+   * "folder": single folder picker for directory selection
    */
   mode?: "multi" | "folder";
 };

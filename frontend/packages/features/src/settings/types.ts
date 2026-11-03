@@ -4,11 +4,13 @@ export interface UploadDirState {
   current: string;
   save: SaveState;
   error: string | null;
+  correlationId?: string | null;
 }
 
 export interface LogState {
   opening: boolean;
   error: string | null;
+  correlationId?: string | null;
 }
 
 export interface CredentialsState {
@@ -18,16 +20,26 @@ export interface CredentialsState {
   confirmNewPassword: string;
   save: SaveState;
   error: string | null;
+  correlationId?: string | null;
 }
 
 export interface SpeedCapState {
   value: string;
   save: SaveState;
   error: string | null;
+  correlationId?: string | null;
 }
 
 export interface ResumePolicyState {
   value: "OWNER_ONLY" | "ANYONE";
   save: SaveState;
   error: string | null;
+  correlationId?: string | null;
+}
+
+export interface MinFreeSpaceState {
+  value: string;
+  save: SaveState;
+  error: string | null;
+  correlationId?: string | null;
 }

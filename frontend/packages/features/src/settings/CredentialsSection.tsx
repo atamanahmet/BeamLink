@@ -87,7 +87,7 @@ export function CredentialsSection({
                 error: null,
               })
             }
-            placeholder="At least 6 characters"
+            placeholder="At least 8 characters"
           />
           <PasswordInput
             label="Confirm New Password"
@@ -108,7 +108,11 @@ export function CredentialsSection({
             />
           ) : null}
           {credentials.error ? (
-            <StatusMessage type="error" message={credentials.error} />
+            <StatusMessage
+              type="error"
+              message={credentials.error}
+              correlationId={credentials.correlationId}
+            />
           ) : null}
 
           <Button

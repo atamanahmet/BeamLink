@@ -1,12 +1,18 @@
 import { useEffect, useState } from "react";
-import type { SettingsApi } from "@beamlink/core";
+import {
+  bytesToGib,
+  problemFromUnknown,
+  type SettingsApi,
+} from "@beamlink/core";
 import { changeCredentialsAction } from "./credentialsActions.ts";
 import { openLogsAction } from "./logActions.ts";
+import { saveMinFreeSpaceAction } from "./minFreeSpaceActions.ts";
 import { saveSpeedCapAction } from "./speedCapActions.ts";
 import { saveUploadDirAction } from "./uploadDirActions.ts";
 import type {
   CredentialsState,
   LogState,
+  MinFreeSpaceState,
   SpeedCapState,
   UploadDirState,
 } from "./types.ts";
@@ -28,7 +34,11 @@ export function useSettingsController({
     save: "idle",
     error: null,
   });
-  const [log, setLog] = useState<LogState>({ opening: false, error: null });
+  const [log, setLog] = useState<LogState>({
+    opening: false,
+    error: null,
+    correlationId: null,
+  });
   const [credentials, setCredentials] = useState<CredentialsState>({
     currentPassword: "",
     newUsername: "",
@@ -39,6 +49,11 @@ export function useSettingsController({
   });
   const [speedCap, setSpeedCap] = useState<SpeedCapState>({
     value: "",
+    save: "idle",
+    error: null,
+  });
+  const [minFreeSpace, setMinFreeSpace] = useState<MinFreeSpaceState>({
+    value: "1",
     save: "idle",
     error: null,
   });
@@ -53,11 +68,13 @@ export function useSettingsController({
           setUploadDir((prev) => ({ ...prev, current: data.path }));
         }
       })
-      .catch(() => {
+      .catch((err: unknown) => {
         if (!cancelled) {
+          const problem = problemFromUnknown(err);
           setUploadDir((prev) => ({
             ...prev,
-            error: "Failed to load upload directory.",
+            error: problem.detail ?? "Failed to load upload directory.",
+            correlationId: problem.correlationId,
           }));
         }
       });
@@ -69,6 +86,18 @@ export function useSettingsController({
           setSpeedCap((prev) => ({
             ...prev,
             value: data.value == null ? "" : String(data.value),
+          }));
+        }
+      })
+      .catch(() => {});
+
+    void settingsApi
+      .getMinFreeSpace()
+      .then((data) => {
+        if (!cancelled) {
+          setMinFreeSpace((prev) => ({
+            ...prev,
+            value: String(bytesToGib(data.value)),
           }));
         }
       })
@@ -92,15 +121,31 @@ export function useSettingsController({
     log,
     credentials,
     speedCap,
+    minFreeSpace,
     folderBrowserOpen,
     setFolderBrowserOpen,
     setSpeedCap,
+    setMinFreeSpace,
     setCredentials,
     saveUploadDir: (path: string) =>
       saveUploadDirAction(settingsApi, path, setUploadDir),
     openFolder,
     openLogs: () => openLogsAction(settingsApi, setLog),
     saveSpeedCap: () => saveSpeedCapAction(settingsApi, speedCap, setSpeedCap),
+    saveMinFreeSpace: () =>
+      saveMinFreeSpaceAction(settingsApi, minFreeSpace, setMinFreeSpace),
+    resetMinFreeSpace: () => {
+      setMinFreeSpace((prev) => ({
+        ...prev,
+        value: "1",
+        error: null,
+      }));
+      void saveMinFreeSpaceAction(
+        settingsApi,
+        { value: "1", save: "idle", error: null, correlationId: null },
+        setMinFreeSpace,
+      );
+    },
     changeCredentials: () =>
       changeCredentialsAction(
         settingsApi,

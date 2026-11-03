@@ -1,3 +1,4 @@
+import { problemFromUnknown } from "@beamlink/core";
 import type { SettingsApi } from "@beamlink/core";
 import type { CredentialsState } from "./types.ts";
 
@@ -23,6 +24,7 @@ export async function changeCredentialsAction(
     setCredentials((prev) => ({
       ...prev,
       error: "Current password is required.",
+      correlationId: null,
     }));
     return;
   }
@@ -30,13 +32,15 @@ export async function changeCredentialsAction(
     setCredentials((prev) => ({
       ...prev,
       error: "Username cannot be blank.",
+      correlationId: null,
     }));
     return;
   }
-  if (newPassword.length < 6) {
+  if (newPassword.length < 8) {
     setCredentials((prev) => ({
       ...prev,
-      error: "New password must be at least 6 characters.",
+      error: "New password must be at least 8 characters.",
+      correlationId: null,
     }));
     return;
   }
@@ -44,11 +48,17 @@ export async function changeCredentialsAction(
     setCredentials((prev) => ({
       ...prev,
       error: "New passwords do not match.",
+      correlationId: null,
     }));
     return;
   }
 
-  setCredentials((prev) => ({ ...prev, save: "saving", error: null }));
+  setCredentials((prev) => ({
+    ...prev,
+    save: "saving",
+    error: null,
+    correlationId: null,
+  }));
 
   try {
     await settingsApi.changeCredentials({
@@ -64,6 +74,7 @@ export async function changeCredentialsAction(
       confirmNewPassword: "",
       save: "success",
       error: null,
+      correlationId: null,
     });
 
     setTimeout(() => {
@@ -71,9 +82,13 @@ export async function changeCredentialsAction(
       onLogout();
     }, 1500);
   } catch (err: unknown) {
-    const axiosErr = err as { response?: { data?: { error?: string } } };
-    const message =
-      axiosErr.response?.data?.error ?? "Failed to update credentials.";
-    setCredentials((prev) => ({ ...prev, save: "error", error: message }));
+    const problem = problemFromUnknown(err);
+    const message = problem.detail ?? "Failed to update credentials.";
+    setCredentials((prev) => ({
+      ...prev,
+      save: "error",
+      error: message,
+      correlationId: problem.correlationId,
+    }));
   }
 }

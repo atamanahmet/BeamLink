@@ -27,6 +27,8 @@ export { ElapsedLabel } from "./transfers/ElapsedLabel.tsx";
 export {
   hasActive,
   getTransferPollInterval,
+  isStalledPending,
+  PENDING_STALL_MS,
 } from "./transfers/transferPoll.ts";
 export {
   TransferView,
@@ -34,6 +36,7 @@ export {
 } from "./transfers/TransferView.tsx";
 export {
   useTransfersQuery,
+  useTransfersPagedQuery,
   useHasActiveTransfers,
   useTransferActions,
 } from "./hooks/useTransfersQuery.ts";
@@ -44,12 +47,80 @@ export {
   type SettingsViewProps,
 } from "./settings/SettingsView.tsx";
 export {
+  SettingsAppearanceSection,
+  type SettingsAppearanceSectionProps,
+} from "./settings/SettingsAppearanceSection.tsx";
+export { DangerZoneSection } from "./settings/DangerZoneSection.tsx";
+export { ConfirmDialog } from "./settings/ConfirmDialog.tsx";
+export {
+  TypedConfirmDialog,
+  RESET_CONFIRM_WORD,
+} from "./settings/TypedConfirmDialog.tsx";
+export {
+  destructiveDialogPhase,
+  destructiveDialogEscapeCloses,
+  type DestructiveDialogPhase,
+} from "./settings/destructiveDialogPhase.ts";
+export {
   useResumePolicySettings,
   type ResumePolicyControls,
 } from "./settings/useResumePolicySettings.ts";
+export { FingerprintText } from "./settings/FingerprintText.tsx";
+export {
+  useNexusTlsPin,
+  type NexusTlsPinControls,
+} from "./settings/useNexusTlsPin.ts";
+export {
+  parseNexusTlsUrl,
+  draftFromStatus,
+  shouldAutoProbe,
+  shouldRedirectToPinSection,
+  type NexusTlsPinAdapter,
+  type NexusTlsPinStatus,
+} from "./settings/nexusTlsPin.ts";
+export { NexusTlsPinSection } from "./settings/NexusTlsPinSection.tsx";
+export { ConnectModal, type ConnectModalProps } from "./settings/ConnectModal.tsx";
+export {
+  ConnectBanner,
+  type ConnectBannerProps,
+} from "./settings/ConnectBanner.tsx";
+export { ConnectSteps, type ConnectStepsProps } from "./settings/ConnectSteps.tsx";
+export {
+  useConnectFlow,
+  useConnectOpen,
+  ConnectOpenProvider,
+  type ConnectFlow,
+} from "./settings/useConnectFlow.ts";
+export { connectStep, type ConnectStep } from "./settings/connectStep.ts";
 
 export { DropZone, type DropZoneProps } from "./send/DropZone.tsx";
+export {
+  BigDropDialog,
+  type BigDropDialogProps,
+} from "./send/BigDropDialog.tsx";
+export {
+  useDropConfirm,
+  type DropConfirmControls,
+} from "./send/useDropConfirm.ts";
+export {
+  UploadBanner,
+  type UploadBannerProps,
+  type UploadBannerKind,
+} from "./send/UploadBanner.tsx";
+export { dispatchErrorMessage } from "./send/dispatchErrorMessage.ts";
+export { showTransferActionError } from "./transfers/showTransferActionError.ts";
+export { mapTransferErrorCode } from "./transfers/transferErrors.ts";
+export {
+  isReceiveDiskPause,
+  diskPauseNotificationCopy,
+} from "./transfers/diskPauseNotification.ts";
+export { ErrorWithRef } from "./problem/ErrorWithRef.tsx";
+export {
+  dispatchNotice,
+  shouldOpenTransfers,
+} from "./send/dispatchNotice.ts";
 export { PeerSelect, type PeerSelectProps, type PeerOption } from "./send/PeerSelect.tsx";
+export { mapSharedFilesToPaths } from "./send/mapSharedFilesToPaths.ts";
 export {
   getDropStatus,
   type DropStatus,
@@ -63,6 +134,7 @@ export type {
   CredentialsState,
   SpeedCapState,
   ResumePolicyState,
+  MinFreeSpaceState,
 } from "./settings/types.ts";
 export { StatusMessage } from "./settings/StatusMessage.tsx";
 export { SettingsHeader } from "./settings/SettingsHeader.tsx";

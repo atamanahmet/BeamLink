@@ -1,15 +1,21 @@
 import { Group, Text } from "@mantine/core";
 import { AlertCircle, CheckCircle } from "lucide-react";
+import { ErrorWithRef } from "../problem/ErrorWithRef.tsx";
 
 type StatusMessageProps = {
   type: "success" | "error";
   message: string;
+  correlationId?: string | null;
 };
 
 /**
  * Inline success or error message for settings sections.
  */
-export function StatusMessage({ type, message }: StatusMessageProps) {
+export function StatusMessage({
+  type,
+  message,
+  correlationId,
+}: StatusMessageProps) {
   const isSuccess = type === "success";
   return (
     <Group
@@ -32,12 +38,15 @@ export function StatusMessage({ type, message }: StatusMessageProps) {
       ) : (
         <AlertCircle size={16} color="var(--bl-danger-text)" />
       )}
-      <Text
-        size="sm"
-        c={isSuccess ? "var(--bl-success-text)" : "var(--bl-danger-text)"}
-      >
-        {message}
-      </Text>
+      {isSuccess ? (
+        <Text size="sm" c="var(--bl-success-text)">
+          {message}
+        </Text>
+      ) : (
+        <Text component="div" size="sm" c="var(--bl-danger-text)">
+          <ErrorWithRef message={message} correlationId={correlationId} />
+        </Text>
+      )}
     </Group>
   );
 }

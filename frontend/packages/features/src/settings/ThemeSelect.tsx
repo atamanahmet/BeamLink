@@ -1,5 +1,4 @@
-import { Paper, Select, SegmentedControl, Stack, Text, Group } from "@mantine/core";
-import { Palette } from "lucide-react";
+import { Select, SegmentedControl, Stack } from "@mantine/core";
 
 export type ThemeSelectOption = {
   id: string;
@@ -27,57 +26,35 @@ export function ThemeSelect({
   onModeChange,
 }: ThemeSelectProps) {
   return (
-    <Paper
-      withBorder
-      p="lg"
-      radius="md"
-      style={{
-        backgroundColor: "var(--bl-surface)",
-        borderColor: "var(--bl-border)",
-      }}
-    >
-      <Stack gap="md">
-        <Group gap="xs">
-          <Palette size={16} color="var(--bl-primary-text)" />
-          <Text
-            size="sm"
-            fw={600}
-            tt="uppercase"
-            c="var(--bl-primary-text)"
-            style={{ letterSpacing: "0.08em" }}
-          >
-            Theme
-          </Text>
-        </Group>
+    <Stack gap="md">
+      <SegmentedControl
+        value={mode}
+        onChange={(next) => {
+          if (next === "light" || next === "dark" || next === "auto") {
+            onModeChange(next);
+          }
+        }}
+        data={[
+          { value: "light", label: "Light" },
+          { value: "dark", label: "Dark" },
+          { value: "auto", label: "Auto" },
+        ]}
+        fullWidth
+        color="brand"
+      />
 
-        <SegmentedControl
-          value={mode}
-          onChange={(next) => {
-            if (next === "light" || next === "dark" || next === "auto") {
-              onModeChange(next);
-            }
-          }}
-          data={[
-            { value: "light", label: "Light" },
-            { value: "dark", label: "Dark" },
-            { value: "auto", label: "Auto" },
-          ]}
-          fullWidth
-        />
-
-        <Select
-          label="Color theme"
-          value={value}
-          onChange={(next) => {
-            if (next != null) onChange(next);
-          }}
-          data={themes.map((theme) => ({
-            value: theme.id,
-            label: theme.name,
-          }))}
-          allowDeselect={false}
-        />
-      </Stack>
-    </Paper>
+      <Select
+        label="Color theme"
+        value={value}
+        onChange={(next) => {
+          if (next != null) onChange(next);
+        }}
+        data={themes.map((theme) => ({
+          value: theme.id,
+          label: theme.name,
+        }))}
+        allowDeselect={false}
+      />
+    </Stack>
   );
 }

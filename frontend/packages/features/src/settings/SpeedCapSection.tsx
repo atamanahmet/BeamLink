@@ -95,7 +95,11 @@ export function SpeedCapSection({
           <StatusMessage type="success" message="Speed cap updated." />
         ) : null}
         {speedCap.error ? (
-          <StatusMessage type="error" message={speedCap.error} />
+          <StatusMessage
+            type="error"
+            message={speedCap.error}
+            correlationId={speedCap.correlationId}
+          />
         ) : null}
       </Stack>
     </Paper>

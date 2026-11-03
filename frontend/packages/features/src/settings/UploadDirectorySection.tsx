@@ -57,7 +57,7 @@ export function UploadDirectorySection({
                 color: "var(--bl-text-primary)",
               }}
             >
-              {uploadDir.current || "—"}
+              {uploadDir.current || "-"}
             </Code>
             <Button
               variant="light"
@@ -81,7 +81,11 @@ export function UploadDirectorySection({
             <StatusMessage type="success" message="Upload directory updated." />
           ) : null}
           {uploadDir.error ? (
-            <StatusMessage type="error" message={uploadDir.error} />
+            <StatusMessage
+              type="error"
+              message={uploadDir.error}
+              correlationId={uploadDir.correlationId}
+            />
           ) : null}
         </Stack>
       </Stack>

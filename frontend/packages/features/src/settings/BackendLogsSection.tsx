@@ -61,7 +61,11 @@ export function BackendLogsSection({
             Open Logs
           </Button>
           {log.error ? (
-            <StatusMessage type="error" message={log.error} />
+            <StatusMessage
+              type="error"
+              message={log.error}
+              correlationId={log.correlationId}
+            />
           ) : null}
         </Stack>
       </Stack>
