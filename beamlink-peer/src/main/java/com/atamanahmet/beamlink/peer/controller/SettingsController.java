@@ -1,9 +1,11 @@
-package com.atamanahmet.beamlink.agent.controller;
+package com.atamanahmet.beamlink.peer.controller;
 
-import com.atamanahmet.beamlink.agent.domain.enums.SettingKey;
-import com.atamanahmet.beamlink.agent.exception.TransferProtocolException;
-import com.atamanahmet.beamlink.agent.service.SettingsService;
-import com.atamanahmet.beamlink.agent.service.SpeedLimitSettingsCache;
+import com.atamanahmet.beamlink.peer.domain.enums.SettingKey;
+import com.atamanahmet.beamlink.peer.exception.InvalidRequestException;
+import com.atamanahmet.beamlink.peer.exception.TransferProtocolException;
+import com.atamanahmet.beamlink.peer.service.DiskReserveProvider;
+import com.atamanahmet.beamlink.peer.service.SettingsService;
+import com.atamanahmet.beamlink.peer.service.SpeedLimitSettingsCache;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -13,12 +15,13 @@ import java.util.HashMap;
 import java.util.Map;
 
 @RestController
-@RequestMapping("/api/agent/settings")
+@RequestMapping("/api/device/settings")
 @RequiredArgsConstructor
 public class SettingsController {
 
     private final SettingsService settingsService;
     private final SpeedLimitSettingsCache speedLimitSettingsCache;
+    private final DiskReserveProvider diskReserveProvider;
 
     @GetMapping("/speed-cap")
     public ResponseEntity<Map<String, Object>> getSpeedCap() {
@@ -58,6 +61,37 @@ public class SettingsController {
             speedLimitSettingsCache.setTotalMbps(value);
         }
         return ResponseEntity.ok(limitBody(speedLimitSettingsCache.getTotalMbps()));
+    }
+
+    @GetMapping("/min-free-space")
+    public ResponseEntity<Map<String, Object>> getMinFreeSpace() {
+        return ResponseEntity.ok(Map.of("value", diskReserveProvider.getBytes()));
+    }
+
+    @PutMapping("/min-free-space")
+    public ResponseEntity<Map<String, Object>> setMinFreeSpace(
+            @RequestBody(required = false) Map<String, Object> body) {
+        long value = readLong(body);
+        settingsService.set(SettingKey.MIN_FREE_SPACE_BYTES, Long.toString(value));
+        diskReserveProvider.refresh();
+        return ResponseEntity.ok(Map.of("value", diskReserveProvider.getBytes()));
+    }
+
+    /**
+     * Reads a Long JSON number named value.
+     */
+    private static long readLong(Map<String, Object> body) {
+        if (body == null || !body.containsKey("value") || body.get("value") == null) {
+            throw new InvalidRequestException("value is required", "INVALID_SETTING");
+        }
+        Object raw = body.get("value");
+        if (raw instanceof Number n) {
+            long parsed = n.longValue();
+            SettingKey.MIN_FREE_SPACE_BYTES.validate(Long.toString(parsed));
+            return parsed;
+        }
+        SettingKey.MIN_FREE_SPACE_BYTES.validate(String.valueOf(raw));
+        return Long.parseLong(String.valueOf(raw).trim());
     }
 
     private static Double readLimit(Map<String, Double> body) {

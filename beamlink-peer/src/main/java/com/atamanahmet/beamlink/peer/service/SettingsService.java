@@ -1,8 +1,8 @@
-package com.atamanahmet.beamlink.agent.service;
+package com.atamanahmet.beamlink.peer.service;
 
-import com.atamanahmet.beamlink.agent.domain.Setting;
-import com.atamanahmet.beamlink.agent.domain.enums.SettingKey;
-import com.atamanahmet.beamlink.agent.repository.SettingsRepository;
+import com.atamanahmet.beamlink.peer.domain.Setting;
+import com.atamanahmet.beamlink.peer.domain.enums.SettingKey;
+import com.atamanahmet.beamlink.peer.repository.SettingsRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -45,6 +45,7 @@ public class SettingsService {
     }
 
     public void set(SettingKey key, String value) {
+        key.validate(value);
         settingsRepository.save(new Setting(key, value));
     }
 
@@ -57,5 +58,12 @@ public class SettingsService {
      */
     public void clear(SettingKey key) {
         settingsRepository.findByKey(key).ifPresent(settingsRepository::delete);
+    }
+
+    /**
+     * Deletes every setting row.
+     */
+    public void deleteAll() {
+        settingsRepository.deleteAll();
     }
 }
