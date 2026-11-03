@@ -1,4 +1,4 @@
-package com.atamanahmet.beamlink.agent.config;
+package com.atamanahmet.beamlink.peer.config;
 
 import lombok.Getter;
 
@@ -11,31 +11,28 @@ import java.net.http.HttpClient;
 import java.time.Duration;
 
 /**
- * Configuration class for agent settings
+ * Configuration class for device settings
  */
 @Configuration
 @Getter
 @RequiredArgsConstructor
-public class AgentConfig {
+public class DeviceConfig {
 
-    private final AgentNetworkConfig networkConfig;
+    private final DeviceNetworkConfig networkConfig;
 
     @Value("${server.port}")
-    private int agentPort;
+    private int devicePort;
 
-    @Value("${agent.ip-address}")
+    @Value("${peer.tls.port}")
+    private int tlsPort;
+
+    @Value("${peer.ip-address}")
     private String configuredIp;
 
-    @Value("${agent.ui.username}")
-    private String agentUsername;
-
-    @Value("${agent.ui.password}")
-    private String agentPassword;
-
-    @Value("${agent.transfer.expiry-hours:24}")
+    @Value("${peer.transfer.expiry-hours:24}")
     private long transferExpiryHours;
 
-    @Value("${agent.auto-resume-group-transfers:false}")
+    @Value("${peer.auto-resume-group-transfers:false}")
     private boolean autoResumeGroupTransfers;
 
     /** Returns configured IP or auto-resolves if set to auto */

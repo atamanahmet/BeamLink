@@ -1,4 +1,4 @@
-package com.atamanahmet.beamlink.agent.config;
+package com.atamanahmet.beamlink.peer.config;
 
 import jakarta.annotation.PostConstruct;
 
@@ -20,16 +20,22 @@ import java.util.Enumeration;
  */
 @Component
 @Getter
-public class AgentNetworkConfig {
+public class DeviceNetworkConfig {
 
     private String resolvedIp;
 
     @PostConstruct
     public void resolve() {
-        this.resolvedIp = resolveLocalIp();
+        this.resolvedIp = detectCurrentIp();
+        if (resolvedIp == null || resolvedIp.isBlank()) {
+            throw new IllegalStateException("No suitable network interface found");
+        }
     }
 
-    private String resolveLocalIp() {
+    /**
+     * Same interface pick as startup resolve. Null when none found.
+     */
+    public String detectCurrentIp() {
         try {
             String bestAddress = null;
             int bestScore = -1;
@@ -67,12 +73,10 @@ public class AgentNetworkConfig {
                 }
             }
 
-            if (bestAddress != null) return bestAddress;
-
+            return bestAddress;
         } catch (SocketException e) {
-            throw new IllegalStateException("Failed to resolve local IP address", e);
+            return null;
         }
-        throw new IllegalStateException("No suitable network interface found");
     }
 
     /**
@@ -81,7 +85,7 @@ public class AgentNetworkConfig {
      * auto-assigned ranges like 192.168.208.x (Windows hotspot).
      */
     private int scoreAddress(String ip) {
-        // 192.168.0.x / 192.168.1.x — most common home routers
+        // 192.168.0.x / 192.168.1.x, most common home routers
         if (ip.startsWith("192.168.0.") || ip.startsWith("192.168.1."))  return 30;
         // Other 192.168.x.x ranges
         if (ip.startsWith("192.168."))                                    return 20;
@@ -89,7 +93,7 @@ public class AgentNetworkConfig {
         if (ip.startsWith("10."))                                         return 15;
         // 172.16–31.x.x private ranges
         if (ip.matches("172\\.(1[6-9]|2\\d|3[01])\\..*"))               return 10;
-        // 169.254.x.x link-local (APIPA) — last resort
+        // 169.254.x.x link-local (APIPA), last resort
         if (ip.startsWith("169.254."))                                    return 1;
         return 5;
     }

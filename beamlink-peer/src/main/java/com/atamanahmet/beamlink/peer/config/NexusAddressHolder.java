@@ -1,8 +1,7 @@
-package com.atamanahmet.beamlink.agent.config;
+package com.atamanahmet.beamlink.peer.config;
 
-import com.atamanahmet.beamlink.agent.domain.Setting;
-import com.atamanahmet.beamlink.agent.domain.enums.SettingKey;
-import com.atamanahmet.beamlink.agent.repository.SettingsRepository;
+import com.atamanahmet.beamlink.peer.domain.enums.SettingKey;
+import com.atamanahmet.beamlink.peer.service.SettingsService;
 import jakarta.annotation.PostConstruct;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -24,13 +23,12 @@ import java.util.concurrent.atomic.AtomicReference;
 @RequiredArgsConstructor
 public class NexusAddressHolder {
 
-    private final SettingsRepository settingsRepository;
+    private final SettingsService settingsService;
     private final AtomicReference<String> nexusUrl = new AtomicReference<>();
 
     @PostConstruct
     public void init() {
-        settingsRepository.findByKey(SettingKey.NEXUS_URL)
-                .map(Setting::getValue)
+        settingsService.get(SettingKey.NEXUS_URL)
                 .filter(v -> !v.isBlank())
                 .ifPresent(url -> {
                     nexusUrl.set(url);
@@ -53,10 +51,7 @@ public class NexusAddressHolder {
     public void setNexusUrl(String url) {
         nexusUrl.set(url);
 
-        Setting setting = settingsRepository.findByKey(SettingKey.NEXUS_URL)
-                .orElse(new Setting(SettingKey.NEXUS_URL, url));
-        setting.update(url);
-        settingsRepository.save(setting);
+        settingsService.set(SettingKey.NEXUS_URL, url);
 
         log.info("Nexus URL set: {}", url);
     }
@@ -67,8 +62,7 @@ public class NexusAddressHolder {
      */
     public void clear() {
         nexusUrl.set(null);
-        settingsRepository.findByKey(SettingKey.NEXUS_URL)
-                .ifPresent(settingsRepository::delete);
+        settingsService.clear(SettingKey.NEXUS_URL);
         log.info("Nexus URL cleared");
     }
 
