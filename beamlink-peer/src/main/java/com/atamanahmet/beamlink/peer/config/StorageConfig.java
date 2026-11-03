@@ -1,4 +1,4 @@
-package com.atamanahmet.beamlink.agent.config;
+package com.atamanahmet.beamlink.peer.config;
 
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
@@ -16,11 +16,6 @@ public class StorageConfig {
     public Path getDefaultUploadsDir() {
 
         return Path.of(runtimeDir, "data", "uploads");
-    }
-
-    public Path getDefaultTempDir() {
-
-        return Path.of(runtimeDir, "data", "temp");
     }
 
     public Path getDefaultLogsDir() {

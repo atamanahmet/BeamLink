@@ -1,4 +1,4 @@
-package com.atamanahmet.beamlink.agent.config;
+package com.atamanahmet.beamlink.peer.config;
 
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
@@ -18,8 +18,4 @@ public class TransferProperties {
     @Min(65_536)
     @Max(8_388_608)
     private int chunkSizeBytes = 524_288;
-
-    @Min(1)
-    @Max(16)
-    private int windowSize = 1;
 }

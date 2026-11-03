@@ -1,21 +1,22 @@
-package com.atamanahmet.beamlink.agent.service;
+package com.atamanahmet.beamlink.peer.service;
 
-import com.atamanahmet.beamlink.agent.domain.FileTransfer;
-import com.atamanahmet.beamlink.agent.domain.enums.PauseOwner;
-import com.atamanahmet.beamlink.agent.domain.enums.TransferStatus;
-import com.atamanahmet.beamlink.agent.dto.ChunkAckResponse;
-import com.atamanahmet.beamlink.agent.exception.ChunkHttpException;
-import com.atamanahmet.beamlink.agent.exception.ChunkRetryExhaustedException;
-import com.atamanahmet.beamlink.agent.exception.FileTransferException;
-import com.atamanahmet.beamlink.agent.exception.TransferProtocolException;
-import com.atamanahmet.beamlink.agent.config.TransferProperties;
-import com.atamanahmet.beamlink.agent.http.HttpSender;
-import com.atamanahmet.beamlink.agent.http.TransferHttpClient;
-import com.atamanahmet.beamlink.agent.repository.FileTransferRepository;
-import com.atamanahmet.beamlink.agent.constants.TransferConstants;
+import com.atamanahmet.beamlink.peer.domain.FileTransfer;
+import com.atamanahmet.beamlink.peer.domain.enums.PauseOwner;
+import com.atamanahmet.beamlink.peer.domain.enums.TransferStatus;
+import com.atamanahmet.beamlink.peer.dto.ChunkAckResponse;
+import com.atamanahmet.beamlink.peer.exception.ChunkHttpException;
+import com.atamanahmet.beamlink.peer.exception.ChunkRetryExhaustedException;
+import com.atamanahmet.beamlink.peer.exception.FileTransferException;
+import com.atamanahmet.beamlink.peer.exception.OffsetMismatchException;
+import com.atamanahmet.beamlink.peer.exception.TransferProtocolException;
+import com.atamanahmet.beamlink.peer.config.TransferProperties;
+import com.atamanahmet.beamlink.peer.http.TransferHttpClient;
+import com.atamanahmet.beamlink.peer.constants.TransferConstants;
+import com.atamanahmet.beamlink.peer.util.FileChecksum;
 
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.core.JacksonException;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.ObjectMapper;
 import org.springframework.http.HttpStatus;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -32,8 +33,8 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.Arrays;
 import java.util.UUID;
+import java.util.function.Supplier;
 import java.util.concurrent.*;
-import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
 
 @Slf4j
@@ -41,9 +42,8 @@ import java.util.concurrent.atomic.AtomicLong;
 @RequiredArgsConstructor
 public class TransferSender {
 
-    private final FileTransferRepository transferRepository;
+    private final FileTransferService fileTransferService;
     private final ObjectMapper objectMapper;
-    private final HttpSender httpSender;
     private final TransferHttpClient transferHttpClient;
     private final TransferSideResolver sideResolver;
     private final TransferSpeedLimiter transferSpeedLimiter;
@@ -64,9 +64,8 @@ public class TransferSender {
     }
 
     /**
-     * Entry point. Opens file, runs sliding window dispatch, cleans up.
+     * Entry point. Opens file, sends chunks in order, cleans up.
      * Tracks highest confirmed offset seen across all chunks.
-     * Prevents regression on out-of-order completions.
      */
     private void doSend(UUID transferId, String targetIp, int targetPort) {
         if (activeSends.putIfAbsent(transferId, Boolean.TRUE) != null) {
@@ -76,23 +75,19 @@ public class TransferSender {
 
         log.info("doSend started transferId: {}", transferId);
 
-        FileTransfer transfer = transferRepository.findByTransferId(transferId).orElse(null);
+        FileTransfer transfer = fileTransferService.findByTransferId(transferId).orElse(null);
         if (transfer == null) {
             log.warn("Transfer not found, aborting: {}", transferId);
             activeSends.remove(transferId);
             return;
         }
 
-        int windowSize = transferProperties.getWindowSize();
-        ExecutorService windowExecutor = Executors.newFixedThreadPool(windowSize);
-        Semaphore window = new Semaphore(windowSize);
         ConcurrentLinkedQueue<Exception> errors = new ConcurrentLinkedQueue<>();
 
         AtomicLong maxConfirmed = new AtomicLong(0L);
         AtomicLong lastProgressSaveAt = new AtomicLong(0L);
-        TempP0Timing tempP0 = new TempP0Timing();
 
-        String baseUrl = "http://" + targetIp + ":" + targetPort;
+        String baseUrl = transferHttpClient.baseUrl(targetIp, targetPort);
 
         try (RandomAccessFile raf = new RandomAccessFile(
                 Paths.get(transfer.getFilePath()).toFile(), "r")) {
@@ -103,38 +98,37 @@ public class TransferSender {
                 log.info("Correcting start offset for {} from {} to {}",
                         transferId, transfer.getConfirmedOffset(), startOffset);
                 transfer.setConfirmedOffset(startOffset);
-                transferRepository.save(transfer);
+                fileTransferService.save(transfer);
             }
             maxConfirmed.set(startOffset);
 
             readAndDispatchChunks(
-                    raf, transfer, targetIp, targetPort, baseUrl, window, windowExecutor, errors,
-                    maxConfirmed, lastProgressSaveAt, tempP0);
-            drainWindow(window, errors);
-            flushProgress(transferId, maxConfirmed, lastProgressSaveAt, tempP0);
+                    raf, transfer, targetIp, targetPort, baseUrl, errors,
+                    maxConfirmed, lastProgressSaveAt);
+            drainErrors(errors);
+            flushProgress(transferId, maxConfirmed, lastProgressSaveAt);
+            markCompleteIfFullySent(transferId);
 
         } catch (Exception e) {
-            FileTransfer current = transferRepository.findByTransferId(transferId).orElse(null);
+            FileTransfer current = fileTransferService.findByTransferId(transferId).orElse(null);
             if (current == null) {
                 return;
             }
-            flushProgress(transferId, maxConfirmed, lastProgressSaveAt, tempP0);
+            flushProgress(transferId, maxConfirmed, lastProgressSaveAt);
             SendFailureKind kind = SendFailureRule.classify(e);
             if (kind == SendFailureKind.OFFLINE) {
                 log.warn("Peer unreachable after retries, pausing: {}", transferId, e);
                 markPausedOfflinePeer(current);
-                tempP0.logSummary(transferId, "pause");
-            } else if (kind == SendFailureKind.RETRY) {
-                log.warn("Retries exhausted, pausing source: {}", transferId, e);
+            } else if (kind == SendFailureKind.RETRY
+                    || kind == SendFailureKind.RESYNC
+                    || kind == SendFailureKind.CHUNK_CORRUPT) {
+                log.warn("Send stopped, pausing source: {}", transferId, e);
                 markPausedSource(current, e.getMessage());
-                tempP0.logSummary(transferId, "pause");
             } else {
                 log.error("Transfer failed: {}", transferId, e);
                 markFailed(current, e.getMessage());
-                tempP0.logSummary(transferId, "failure");
             }
         } finally {
-            windowExecutor.shutdown();
             activeSends.remove(transferId);
             transferSpeedLimiter.clearTransfer(transferId);
         }
@@ -142,7 +136,7 @@ public class TransferSender {
 
     /**
      * Reads file chunk by chunk, checks pause/cancel each iteration,
-     * submits each chunk to window executor.
+     * sends each chunk in order.
      */
     private void readAndDispatchChunks(
             RandomAccessFile raf,
@@ -150,29 +144,25 @@ public class TransferSender {
             String targetIp,
             int targetPort,
             String baseUrl,
-            Semaphore window,
-            ExecutorService windowExecutor,
             ConcurrentLinkedQueue<Exception> errors,
             AtomicLong maxConfirmed,
-            AtomicLong lastProgressSaveAt,
-            TempP0Timing tempP0
-    ) throws Exception {
+            AtomicLong lastProgressSaveAt) throws Exception {
 
         UUID transferId = transfer.getTransferId();
         long offset = transfer.getConfirmedOffset();
         raf.seek(offset);
         byte[] buffer = new byte[transferProperties.getChunkSizeBytes()];
         int bytesRead;
+        Long lastResyncExpected = null;
+        int resyncNoProgressCount = 0;
 
         while (true) {
-            long readStart = System.nanoTime();
             bytesRead = raf.read(buffer);
-            tempP0.readMs.addAndGet((System.nanoTime() - readStart) / 1_000_000L);
             if (bytesRead == -1) {
                 break;
             }
 
-            FileTransfer current = transferRepository.findByTransferId(transferId).orElse(null);
+            FileTransfer current = fileTransferService.findByTransferId(transferId).orElse(null);
             if (current == null) {
                 log.warn("Transfer disappeared during send: {}", transferId);
                 break;
@@ -180,19 +170,16 @@ public class TransferSender {
             if (current.getStatus() == TransferStatus.CANCELLED
                     || current.getStatus() == TransferStatus.FAILED) {
                 log.info("Transfer stopped ({}): {}", current.getStatus(), transferId);
-                flushProgress(transferId, maxConfirmed, lastProgressSaveAt, tempP0);
-                tempP0.logSummary(transferId, "cancel");
+                flushProgress(transferId, maxConfirmed, lastProgressSaveAt);
                 break;
             }
             if (current.getStatus() == TransferStatus.PAUSED) {
-                flushProgress(transferId, maxConfirmed, lastProgressSaveAt, tempP0);
-                tempP0.logSummary(transferId, "pause");
+                flushProgress(transferId, maxConfirmed, lastProgressSaveAt);
                 boolean leave = holdWhilePaused(transferId);
                 if (leave) {
                     break;
                 }
-                tempP0.summaryLogged.set(false);
-                FileTransfer resumed = transferRepository.findByTransferId(transferId).orElse(null);
+                FileTransfer resumed = fileTransferService.findByTransferId(transferId).orElse(null);
                 if (resumed == null) {
                     break;
                 }
@@ -202,26 +189,58 @@ public class TransferSender {
                     log.info("Correcting resume offset for {} from {} to {}",
                             transferId, resumed.getConfirmedOffset(), offset);
                     resumed.setConfirmedOffset(offset);
-                    transferRepository.save(resumed);
+                    fileTransferService.save(resumed);
                 }
                 maxConfirmed.set(offset);
                 raf.seek(offset);
+                lastResyncExpected = null;
+                resyncNoProgressCount = 0;
                 continue;
             }
-            if (!errors.isEmpty()) throw errors.poll();
+            if (!errors.isEmpty()) {
+                Exception error = errors.poll();
+                if (error instanceof OffsetMismatchException mismatch) {
+                    drainErrors(errors);
+                    while (!errors.isEmpty() && errors.peek() instanceof OffsetMismatchException) {
+                        errors.poll();
+                    }
+                    if (!errors.isEmpty()) {
+                        throw errors.poll();
+                    }
+                    long expectedOffset = mismatch.getExpectedOffset();
+                    resyncNoProgressCount = OffsetResyncRule.nextNoProgressCount(
+                            expectedOffset, lastResyncExpected, resyncNoProgressCount);
+                    lastResyncExpected = expectedOffset;
+                    if (OffsetResyncRule.decide(
+                            expectedOffset, current.getFileSize(), resyncNoProgressCount)
+                            == OffsetResyncRule.Decision.PAUSE) {
+                        flushProgress(transferId, maxConfirmed, lastProgressSaveAt);
+                        markPausedSource(current, mismatch.getMessage());
+                        break;
+                    }
+                    log.warn(
+                            "Resync send offset transferId={} expectedOffset={}",
+                            transferId, expectedOffset);
+                    offset = expectedOffset;
+                    maxConfirmed.set(expectedOffset);
+                    current.setConfirmedOffset(expectedOffset);
+                    fileTransferService.save(current);
+                    raf.seek(expectedOffset);
+                    continue;
+                }
+                throw error;
+            }
 
             byte[] chunk = Arrays.copyOf(buffer, bytesRead);
             long chunkOffset = offset;
             long chunkEnd = offset + bytesRead - 1L;
             FileTransfer dispatchTransfer = current;
 
-            window.acquire();
-            windowExecutor.submit(() -> dispatchChunk(
-                    dispatchTransfer, baseUrl, chunkOffset, chunkEnd, chunk, window, errors,
-                    maxConfirmed, lastProgressSaveAt, tempP0
-            ));
+            dispatchChunk(
+                    dispatchTransfer, targetIp, targetPort, baseUrl, chunkOffset, chunkEnd, chunk, errors,
+                    maxConfirmed, lastProgressSaveAt
+            );
 
-            tempP0.maybeLog();
             offset += bytesRead;
         }
     }
@@ -231,55 +250,53 @@ public class TransferSender {
      */
     private void dispatchChunk(
             FileTransfer transfer,
+            String targetIp,
+            int targetPort,
             String baseUrl,
             long chunkOffset,
             long chunkEnd,
             byte[] chunk,
-            Semaphore window,
             ConcurrentLinkedQueue<Exception> errors,
             AtomicLong maxConfirmed,
-            AtomicLong lastProgressSaveAt,
-            TempP0Timing tempP0
-    ) {
+            AtomicLong lastProgressSaveAt) {
         try {
             assertSendStillRunnable(transfer.getTransferId());
 
-            long waitMs = transferSpeedLimiter.acquire(
-                    transfer.getTransferId(), transfer.getSpeedLimitMbps(), chunk.length);
-            tempP0.sleepMs.addAndGet(waitMs);
+            transferSpeedLimiter.acquire(transfer.getTransferId(), transfer.getSpeedLimitMbps(), chunk.length);
 
-            long httpStart = System.nanoTime();
             ChunkAckResponse ack = sendChunkWithRetry(
-                    baseUrl, transfer.getTransferId(),
+                    targetIp, targetPort, baseUrl, transfer.getTransferId(),
                     chunkOffset, chunkEnd,
                     transfer.getFileSize(), chunk,
-                    transfer.getMaxRetries(),
-                    tempP0
+                    transfer.getMaxRetries()
             );
-            tempP0.httpMs.addAndGet((System.nanoTime() - httpStart) / 1_000_000L);
-            tempP0.windowBytes.addAndGet(chunk.length);
 
             updateTransferProgress(
                     transfer, ack.getConfirmedOffset(), maxConfirmed, lastProgressSaveAt,
-                    ack.isComplete(), tempP0);
-            tempP0.maybeLog();
+                    ack.isComplete());
 
             if (ack.isComplete()) {
                 transfer.setStatus(TransferStatus.COMPLETED);
-                transferRepository.save(transfer);
+                fileTransferService.save(transfer);
                 transferLocks.remove(transfer.getTransferId());
                 log.info("Transfer completed: {}", transfer.getTransferId());
-                tempP0.logSummary(transfer.getTransferId(), "complete");
             }
         } catch (TransferProtocolException e) {
-            if ("TRANSFER_PAUSED".equals(e.getCode())) {
+            if ("TRANSFER_PAUSED".equals(e.getCode())
+                    || DiskReserveRule.CODE.equals(e.getCode())) {
                 flushProgress(
-                        transfer.getTransferId(), maxConfirmed, lastProgressSaveAt, tempP0);
-                holdForPeerPause(transfer, e.getPausedBy());
-                tempP0.logSummary(transfer.getTransferId(), "pause");
+                        transfer.getTransferId(), maxConfirmed, lastProgressSaveAt);
+                PauseOwner pausedBy = e.getPausedBy() != null
+                        ? e.getPausedBy()
+                        : PauseOwner.TARGET;
+                holdForPeerPause(transfer, pausedBy);
+                if (DiskReserveRule.CODE.equals(e.getCode())) {
+                    transfer.setFailureReason(DiskReserveRule.CODE);
+                    fileTransferService.save(transfer);
+                }
             } else if ("TRANSFER_ABORTED".equals(e.getCode())) {
                 flushProgress(
-                        transfer.getTransferId(), maxConfirmed, lastProgressSaveAt, tempP0);
+                        transfer.getTransferId(), maxConfirmed, lastProgressSaveAt);
                 log.info("Chunk task aborted transferId={}: {}",
                         transfer.getTransferId(), e.getMessage());
             } else {
@@ -287,20 +304,15 @@ public class TransferSender {
             }
         } catch (Exception e) {
             errors.add(e);
-        } finally {
-            window.release();
         }
     }
 
     /**
-     * Blocks until all window slots free, means all in-flight chunks finished.
-     * Then checks if any chunk failed.
+     * Throws the first queued chunk error if any.
      */
-    private void drainWindow(
-            Semaphore window,
+    private void drainErrors(
             ConcurrentLinkedQueue<Exception> errors
     ) throws Exception {
-        window.acquire(transferProperties.getWindowSize());
         if (!errors.isEmpty()) throw errors.poll();
     }
 
@@ -312,8 +324,7 @@ public class TransferSender {
             long newOffset,
             AtomicLong maxConfirmed,
             AtomicLong lastProgressSaveAt,
-            boolean forceSave,
-            TempP0Timing tempP0) {
+            boolean forceSave) {
 
         long prev;
         do {
@@ -334,9 +345,7 @@ public class TransferSender {
             if (!forceSave && nowMs - lastProgressSaveAt.get() < PROGRESS_SAVE_INTERVAL_MS) {
                 return;
             }
-            long dbStart = System.nanoTime();
-            transferRepository.save(transfer);
-            tempP0.dbMs.addAndGet((System.nanoTime() - dbStart) / 1_000_000L);
+            fileTransferService.save(transfer);
             lastProgressSaveAt.set(nowMs);
         }
     }
@@ -347,9 +356,8 @@ public class TransferSender {
     private void flushProgress(
             UUID transferId,
             AtomicLong maxConfirmed,
-            AtomicLong lastProgressSaveAt,
-            TempP0Timing tempP0) {
-        FileTransfer transfer = transferRepository.findByTransferId(transferId).orElse(null);
+            AtomicLong lastProgressSaveAt) {
+        FileTransfer transfer = fileTransferService.findByTransferId(transferId).orElse(null);
         if (transfer == null) {
             return;
         }
@@ -363,16 +371,33 @@ public class TransferSender {
             }
             transfer.setConfirmedOffset(offset);
             transfer.setLastChunkAt(now);
-            long dbStart = System.nanoTime();
-            transferRepository.save(transfer);
-            tempP0.dbMs.addAndGet((System.nanoTime() - dbStart) / 1_000_000L);
+            fileTransferService.save(transfer);
             lastProgressSaveAt.set(System.currentTimeMillis());
         }
     }
 
+    /**
+     * Marks COMPLETED when every byte is confirmed, including a 0 byte file.
+     */
+    private void markCompleteIfFullySent(UUID transferId) {
+        FileTransfer sent = fileTransferService.findByTransferId(transferId).orElse(null);
+        if (sent == null) {
+            return;
+        }
+        if (!SendCompleteRule.shouldMarkComplete(
+                sent.getStatus(), sent.getConfirmedOffset(), sent.getFileSize())) {
+            return;
+        }
+        sent.setStatus(TransferStatus.COMPLETED);
+        fileTransferService.save(sent);
+        transferLocks.remove(transferId);
+        log.info("Transfer completed: {}", transferId);
+    }
+
     private ChunkAckResponse sendChunkWithRetry(
+            String targetIp, int targetPort,
             String baseUrl, UUID transferId, long offset, long chunkEnd,
-            long fileSize, byte[] chunk, int maxRetries, TempP0Timing tempP0
+            long fileSize, byte[] chunk, int maxRetries
     ) throws IOException, InterruptedException {
 
         Exception lastException = null;
@@ -380,10 +405,10 @@ public class TransferSender {
         for (int attempt = 1; attempt <= maxRetries; attempt++) {
             assertSendStillRunnable(transferId);
             try {
-                return sendChunk(baseUrl, transferId, offset, chunkEnd, fileSize, chunk);
+                return sendChunk(targetIp, targetPort, baseUrl, transferId, offset, chunkEnd, fileSize, chunk);
             } catch (Exception e) {
                 SendFailureKind kind = SendFailureRule.classify(e);
-                if (kind == SendFailureKind.FATAL) {
+                if (!SendFailureRule.allowsChunkRetry(kind)) {
                     if (e instanceof RuntimeException runtime) {
                         throw runtime;
                     }
@@ -393,7 +418,6 @@ public class TransferSender {
                 log.trace("Chunk send failed (attempt {}/{}): {}", attempt, maxRetries, e.getMessage());
                 if (attempt < maxRetries) {
                     assertSendStillRunnable(transferId);
-                    tempP0.retries.incrementAndGet();
                     Thread.sleep(TransferConstants.RETRY_DELAY_MS * attempt);
                 }
             }
@@ -407,7 +431,7 @@ public class TransferSender {
      * Stops chunk work when transfer is FAILED, PAUSED, or CANCELLED.
      */
     private void assertSendStillRunnable(UUID transferId) {
-        FileTransfer current = transferRepository.findByTransferId(transferId).orElse(null);
+        FileTransfer current = fileTransferService.findByTransferId(transferId).orElse(null);
         if (current == null) {
             throw new TransferProtocolException(
                     "TRANSFER_ABORTED",
@@ -431,24 +455,50 @@ public class TransferSender {
     }
 
     private ChunkAckResponse sendChunk(
+            String targetIp, int targetPort,
             String baseUrl, UUID transferId, long offset, long chunkEnd,
             long fileSize, byte[] chunk
     ) throws IOException, InterruptedException {
 
         String contentRange = "bytes " + offset + "-" + chunkEnd + "/" + fileSize;
+        String chunkSha256 = FileChecksum.sha256Hex(chunk);
 
         HttpRequest request = HttpRequest.newBuilder()
                 .uri(URI.create(baseUrl + "/api/transfers/" + transferId + "/chunk"))
                 .header("Content-Type", "application/octet-stream")
                 .header("Content-Range", contentRange)
+                .header(TransferConstants.CHUNK_SHA256_HEADER, chunkSha256)
                 .timeout(Duration.ofSeconds(TransferConstants.CHUNK_TIMEOUT_SECONDS))
                 .method("PATCH", HttpRequest.BodyPublishers.ofByteArray(chunk))
                 .build();
 
-        HttpResponse<String> response = httpSender.send(request);
+        HttpResponse<String> response = transferHttpClient.exchange(request, targetIp, targetPort);
+        if (response.statusCode() == 422) {
+            throw new TransferProtocolException(
+                    "CHUNK_CHECKSUM_MISMATCH",
+                    "CHUNK_CHECKSUM_MISMATCH",
+                    HttpStatus.UNPROCESSABLE_ENTITY);
+        }
+        if (response.statusCode() == 404) {
+            JsonNode lostBody = jacksonOrIo(() -> objectMapper.readTree(response.body()));
+            if (SessionLostRule.isLost(lostBody.path("code").asText())) {
+                throw new TransferProtocolException(
+                        SessionLostRule.CODE,
+                        SessionLostRule.MESSAGE,
+                        HttpStatus.NOT_FOUND);
+            }
+        }
+        if (response.statusCode() == 507) {
+            throw new TransferProtocolException(
+                    DiskReserveRule.CODE,
+                    DiskReserveRule.DETAIL,
+                    HttpStatus.INSUFFICIENT_STORAGE,
+                    PauseOwner.TARGET);
+        }
         if (response.statusCode() == 409) {
-            JsonNode body = objectMapper.readTree(response.body());
-            if ("TRANSFER_PAUSED".equals(body.path("code").asText())) {
+            JsonNode body = jacksonOrIo(() -> objectMapper.readTree(response.body()));
+            String code = body.path("code").asText();
+            if ("TRANSFER_PAUSED".equals(code)) {
                 PauseOwner pausedBy = null;
                 String pausedByText = body.path("pausedBy").asText(null);
                 if (pausedByText != null && !pausedByText.isBlank()) {
@@ -460,6 +510,9 @@ public class TransferSender {
                         HttpStatus.CONFLICT,
                         pausedBy);
             }
+            if ("OFFSET_MISMATCH".equals(code)) {
+                throw new OffsetMismatchException(body.path("expectedOffset").asLong(-1L));
+            }
         }
         if (response.statusCode() != 200) {
             throw new ChunkHttpException(
@@ -468,17 +521,31 @@ public class TransferSender {
                             + " Body: " + response.body());
         }
 
-        return objectMapper.readValue(response.body(), ChunkAckResponse.class);
+        return jacksonOrIo(() -> objectMapper.readValue(response.body(), ChunkAckResponse.class));
+    }
+
+    /**
+     * Runs a Jackson read. Unchecked Jackson errors become IOException.
+     */
+    private <T> T jacksonOrIo(Supplier<T> read) throws IOException {
+        try {
+            return read.get();
+        } catch (JacksonException e) {
+            throw new IOException(e.getMessage(), e);
+        }
     }
 
     /**
      * Holds local send when the peer reports TRANSFER_PAUSED.
      */
     private void holdForPeerPause(FileTransfer transfer, PauseOwner pausedBy) {
+        if (pausedBy == null) {
+            throw new IllegalArgumentException("pausedBy required");
+        }
         PauseOwner resolved = PausedByResolver.resolvePausedBy(transfer.getPausedBy(), pausedBy);
         transfer.setStatus(TransferStatus.PAUSED);
         transfer.setPausedBy(resolved);
-        transferRepository.save(transfer);
+        fileTransferService.save(transfer);
         log.info("Holding send for peer pause transferId={} pausedBy={}",
                 transfer.getTransferId(), resolved);
     }
@@ -491,7 +558,7 @@ public class TransferSender {
         log.info("Transfer paused, holding at current offset: {}", transferId);
         while (true) {
             Thread.sleep(TransferConstants.PAUSE_HOLD_POLL_MS);
-            FileTransfer current = transferRepository.findByTransferId(transferId).orElse(null);
+            FileTransfer current = fileTransferService.findByTransferId(transferId).orElse(null);
             if (current == null) {
                 return true;
             }
@@ -513,11 +580,14 @@ public class TransferSender {
     private void markFailed(FileTransfer transfer, String reason) {
         transfer.setStatus(TransferStatus.FAILED);
         transfer.setFailureReason(reason);
-        transferRepository.save(transfer);
+        fileTransferService.save(transfer);
         transferLocks.remove(transfer.getTransferId());
         if (transfer.getTargetIp() != null && transfer.getTargetPort() != null) {
-            transferHttpClient.notifyCancelToPeer(
-                    transfer.getTargetIp(), transfer.getTargetPort(), transfer.getTransferId());
+            transferHttpClient.notifyFailToPeer(
+                    transfer.getTargetIp(),
+                    transfer.getTargetPort(),
+                    transfer.getTransferId(),
+                    reason);
         }
     }
 
@@ -529,7 +599,7 @@ public class TransferSender {
                 transfer.getPausedBy(), PauseOwner.SOURCE);
         transfer.setStatus(TransferStatus.PAUSED);
         transfer.setPausedBy(resolved);
-        transferRepository.save(transfer);
+        fileTransferService.save(transfer);
         transferLocks.remove(transfer.getTransferId());
         if (transfer.getTargetIp() != null && transfer.getTargetPort() != null) {
             transferHttpClient.notifyPauseToPeer(
@@ -546,65 +616,13 @@ public class TransferSender {
      */
     private void markPausedOfflinePeer(FileTransfer transfer) {
         PauseOwner local = sideResolver.resolve(
-                transfer.getSourceAgentId(), transfer.getTargetAgentId(), transfer.getTargetIp());
+                transfer.getSourceDeviceId(), transfer.getTargetDeviceId(), transfer.getTargetIp());
         PauseOwner offline = TransferSideResolver.opposite(local);
         transfer.setStatus(TransferStatus.PAUSED);
         transfer.setPausedBy(offline);
-        transferRepository.save(transfer);
+        fileTransferService.save(transfer);
         transferLocks.remove(transfer.getTransferId());
         log.info("Paused unreachable peer transferId={} pausedBy={}",
                 transfer.getTransferId(), offline);
-    }
-
-    /**
-     * TEMP-P0 per-transfer timing counters for temporary sender profiling.
-     */
-    private static final class TempP0Timing {
-        private final AtomicLong readMs = new AtomicLong();
-        private final AtomicLong httpMs = new AtomicLong();
-        private final AtomicLong dbMs = new AtomicLong();
-        private final AtomicLong sleepMs = new AtomicLong();
-        private final AtomicLong windowBytes = new AtomicLong();
-        private final AtomicLong retries = new AtomicLong();
-        private final AtomicLong lastLogAt = new AtomicLong(System.currentTimeMillis());
-        private final AtomicBoolean summaryLogged = new AtomicBoolean();
-
-        private void maybeLog() {
-            long now = System.currentTimeMillis();
-            long prev = lastLogAt.get();
-            if (now - prev < 2000L) {
-                return;
-            }
-            if (!lastLogAt.compareAndSet(prev, now)) {
-                return;
-            }
-            long elapsedMs = Math.max(1L, now - prev);
-            long bytes = windowBytes.getAndSet(0L);
-            double mbps = (bytes * 8.0) / elapsedMs / 1000.0;
-            log.debug(
-                    "TEMP-P0 achieved={} Mb/s payloadBytes={} windowMs={} readMs={} httpMs={} dbMs={} sleepMs={}",
-                    String.format("%.1f", mbps),
-                    bytes,
-                    elapsedMs,
-                    readMs.get(),
-                    httpMs.get(),
-                    dbMs.get(),
-                    sleepMs.get());
-        }
-
-        /**
-         * TEMP-P0 one summary line for sender counters.
-         */
-        private void logSummary(UUID transferId, String event) {
-            if (!summaryLogged.compareAndSet(false, true)) {
-                return;
-            }
-            log.info(
-                    "TEMP-P0 sender event={} transferId={} retries={} waitMs={}",
-                    event,
-                    transferId,
-                    retries.get(),
-                    httpMs.get());
-        }
     }
 }
