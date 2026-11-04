@@ -14,8 +14,8 @@ export type DropZoneProps = {
 
 const DROP_TEXT: Record<DropStatus, string> = {
   sending: "Initiating transfer...",
-  noPeer: "Select a destination agent above",
-  offline: "Selected agent is offline",
+  noPeer: "Select a destination peer above",
+  offline: "Peer is offline or has receive turned off",
   dragging: "Drop to send",
   idle: "Drag files or folders here",
 };

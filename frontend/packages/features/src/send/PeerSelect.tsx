@@ -1,8 +1,8 @@
 import { NativeSelect, Stack, Text } from "@mantine/core";
 
 export type PeerOption = {
-  agentId: string;
-  agentName: string;
+  deviceId: string;
+  deviceName: string;
   ipAddress: string;
   port: number;
   online: boolean;
@@ -11,7 +11,7 @@ export type PeerOption = {
 export type PeerSelectProps = {
   options: PeerOption[];
   value: string;
-  onChange: (agentId: string) => void;
+  onChange: (deviceId: string) => void;
   disabled: boolean;
   isOffline: boolean;
 };
@@ -25,26 +25,26 @@ export const PeerSelect = ({
 }: PeerSelectProps) => (
   <Stack gap="xs">
     <NativeSelect
-      label="Destination Agent"
+      label="Destination peer"
       value={value}
       onChange={(e) => onChange(e.currentTarget.value)}
       disabled={disabled}
       data={[
-        { value: "", label: "Choose destination agent..." },
+        { value: "", label: "Choose destination peer..." },
         ...options.map((peer) => ({
-          value: peer.agentId,
-          label: `${peer.agentName} (${peer.ipAddress}:${peer.port}) — ${peer.online ? "Online" : "Offline"}`,
+          value: peer.deviceId,
+          label: `${peer.deviceName} (${peer.ipAddress}:${peer.port}), ${peer.online ? "Online" : "Offline"}`,
         })),
       ]}
     />
     {options.length === 0 ? (
       <Text size="sm" c="var(--bl-text-secondary)">
-        No agents registered.
+        No peers registered.
       </Text>
     ) : null}
     {isOffline ? (
       <Text size="sm" c="var(--bl-danger-text)">
-        This agent is offline.
+        Peer is offline or has receive turned off
       </Text>
     ) : null}
   </Stack>
