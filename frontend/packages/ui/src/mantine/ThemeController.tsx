@@ -118,9 +118,12 @@ function WindowThemeSync({
 export function ThemeController({
   children,
   onThemeApplied,
+  phone = false,
 }: {
   children: ReactNode;
   onThemeApplied?: (colors: ThemeWindowColors) => void;
+  /** Phone size tokens. Desktop callers omit. */
+  phone?: boolean;
 }) {
   const themes = useMemo(() => loadThemes(), []);
   const [settings, setSettings] = useState<ThemeSettings>(() =>
@@ -131,7 +134,7 @@ export function ThemeController({
     () => resolveThemeSeeds(themes, settings),
     [themes, settings],
   );
-  const theme = useMemo(() => buildMantineTheme(seeds), [seeds]);
+  const theme = useMemo(() => buildMantineTheme(seeds, phone), [seeds, phone]);
   const cssVariablesResolver = useMemo(
     () => () => buildCssVariables(seeds),
     [seeds],

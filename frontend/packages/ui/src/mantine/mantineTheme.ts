@@ -225,14 +225,83 @@ function inputBorderVars(
 }
 
 /**
+ * Phone-only size tokens. Desktop callers omit the phone flag.
+ */
+function phoneSizeTheme(): Pick<
+  MantineThemeOverride,
+  "fontSizes" | "spacing" | "components"
+> {
+  const control = {
+    input: { minHeight: 48, fontSize: 16 },
+  };
+  return {
+    fontSizes: {
+      xs: rem(14),
+      sm: rem(14),
+      md: rem(16),
+      lg: rem(18),
+      xl: rem(20),
+    },
+    spacing: {
+      xs: rem(8),
+      sm: rem(12),
+      md: rem(16),
+      lg: rem(24),
+      xl: rem(32),
+    },
+    components: {
+      Button: {
+        defaultProps: { size: "md" },
+        styles: {
+          root: { minHeight: 48 },
+        },
+      },
+      Input: {
+        vars: inputBorderVars,
+        styles: control,
+      },
+      NativeSelect: {
+        styles: control,
+      },
+      Select: {
+        styles: control,
+      },
+      TextInput: {
+        styles: control,
+      },
+      ActionIcon: {
+        styles: {
+          root: { minHeight: 48, minWidth: 48 },
+        },
+      },
+      SegmentedControl: {
+        styles: {
+          root: { minHeight: 48 },
+          label: {
+            minHeight: 48,
+            display: "flex",
+            alignItems: "center",
+            fontSize: 16,
+          },
+        },
+      },
+    },
+  };
+}
+
+/**
  * Builds a Mantine theme override from theme seeds.
  */
-export function buildMantineTheme(seeds: ThemeSeeds): MantineThemeOverride {
+export function buildMantineTheme(
+  seeds: ThemeSeeds,
+  phone = false,
+): MantineThemeOverride {
   rejectInvalidSeeds(seeds);
   const statusColors: Record<string, MantineColorsTuple> = {};
   for (const role of STATUS_ROLES) {
     statusColors[role] = toColorTuple(generateScale(STATUS_SEEDS[role]));
   }
+  const phoneSizes = phone ? phoneSizeTheme() : null;
   return {
     colors: {
       brand: toColorTuple(generateScale(seeds.primary)),
@@ -246,9 +315,13 @@ export function buildMantineTheme(seeds: ThemeSeeds): MantineThemeOverride {
     fontFamily: "var(--font-ui)",
     fontFamilyMonospace: "var(--font-mono)",
     variantColorResolver: beamVariantResolver(),
+    ...(phoneSizes
+      ? { fontSizes: phoneSizes.fontSizes, spacing: phoneSizes.spacing }
+      : {}),
     components: {
       Input: {
         vars: inputBorderVars,
+        ...(phoneSizes?.components?.Input ?? {}),
       },
       Paper: {
         styles: {
@@ -285,6 +358,16 @@ export function buildMantineTheme(seeds: ThemeSeeds): MantineThemeOverride {
           },
         },
       },
+      ...(phoneSizes?.components
+        ? {
+            Button: phoneSizes.components.Button,
+            NativeSelect: phoneSizes.components.NativeSelect,
+            Select: phoneSizes.components.Select,
+            TextInput: phoneSizes.components.TextInput,
+            ActionIcon: phoneSizes.components.ActionIcon,
+            SegmentedControl: phoneSizes.components.SegmentedControl,
+          }
+        : {}),
     },
   };
 }
