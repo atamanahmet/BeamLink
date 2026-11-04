@@ -7,9 +7,9 @@ export type TransferPauseMetaProps = {
   pausedBy: PauseOwner | null;
   canResume: boolean;
   peerOnline: boolean;
-  localAgentId?: string | null;
-  sourceAgentId?: string | null;
-  targetAgentId?: string | null;
+  localDeviceId?: string | null;
+  sourceDeviceId?: string | null;
+  targetDeviceId?: string | null;
 };
 
 /**
@@ -20,19 +20,19 @@ export function TransferPauseMeta({
   pausedBy,
   canResume,
   peerOnline,
-  localAgentId = null,
-  sourceAgentId = null,
-  targetAgentId = null,
+  localDeviceId = null,
+  sourceDeviceId = null,
+  targetDeviceId = null,
 }: TransferPauseMetaProps) {
   if (status !== "PAUSED") return null;
 
   const peerId = resolveTransferPeerId(
-    localAgentId,
-    sourceAgentId,
-    targetAgentId,
+    localDeviceId,
+    sourceDeviceId,
+    targetDeviceId,
   );
   const isTargetSide =
-    sourceAgentId != null && peerId != null && peerId === sourceAgentId;
+    sourceDeviceId != null && peerId != null && peerId === sourceDeviceId;
 
   const ownerLabel =
     pausedBy === "SOURCE"
@@ -43,7 +43,7 @@ export function TransferPauseMeta({
 
   let resumeReason: string | null = null;
   if (!canResume) {
-    if (!peerOnline) resumeReason = "Agent offline";
+    if (!peerOnline) resumeReason = "Peer offline";
     else resumeReason = "Resume not allowed";
   }
 

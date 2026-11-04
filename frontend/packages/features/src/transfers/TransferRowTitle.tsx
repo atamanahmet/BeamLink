@@ -12,7 +12,7 @@ export type TransferRowTitleProps = {
   showPeer: boolean;
   elapsedLabel: ReactNode;
   isExpanded: boolean;
-  localAgentId?: string | null;
+  localDeviceId?: string | null;
   onExpand: () => void;
 };
 
@@ -26,7 +26,7 @@ export function TransferRowTitle({
   showPeer,
   elapsedLabel,
   isExpanded,
-  localAgentId = null,
+  localDeviceId = null,
   onExpand,
 }: TransferRowTitleProps) {
   return (
@@ -96,9 +96,9 @@ export function TransferRowTitle({
           pausedBy={t.pausedBy}
           canResume={t.canResume}
           peerOnline={peerOnline}
-          localAgentId={localAgentId}
-          sourceAgentId={t.sourceAgentId}
-          targetAgentId={t.targetAgentId}
+          localDeviceId={localDeviceId}
+          sourceDeviceId={t.sourceDeviceId}
+          targetDeviceId={t.targetDeviceId}
         />
       </Group>
     </Stack>

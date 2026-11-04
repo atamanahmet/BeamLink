@@ -21,9 +21,10 @@ type TransferListBodyProps = {
   >;
   peers: PeerSummary[];
   unit: SpeedUnit;
-  localAgentId?: string | null;
+  localDeviceId?: string | null;
   actionLoading: Record<string, boolean>;
   inlineErrors: Record<string, string>;
+  inlineRefs: Record<string, string>;
   expanded: Record<string, boolean>;
   childrenMap: Record<string, TransferSummary[]>;
   groupExpanded: Record<string, boolean>;
@@ -41,7 +42,7 @@ type TransferListBodyProps = {
  */
 function elapsedFor(t: TransferSummary): ReactNode {
   if (t.status === "PENDING") {
-    return <ElapsedLabel createdAt={t.createdAt} />;
+    return <ElapsedLabel createdAt={t.createdAt} pending />;
   }
   if (t.status === "COMPLETED" && t.completedAt) {
     return formatElapsedMs(
@@ -61,9 +62,10 @@ export function TransferListBody({
   items,
   peers,
   unit,
-  localAgentId = null,
+  localDeviceId = null,
   actionLoading,
   inlineErrors,
+  inlineRefs,
   expanded,
   childrenMap,
   groupExpanded,
@@ -75,13 +77,13 @@ export function TransferListBody({
   onDelete,
   onSetSpeedLimit,
 }: TransferListBodyProps) {
-  const getPeer = (agentId: string) => peers.find((p) => p.id === agentId);
+  const getPeer = (deviceId: string) => peers.find((p) => p.id === deviceId);
 
   const renderTransferRow = (t: TransferSummary, indented = false) => {
     const peerId = resolveTransferPeerId(
-      localAgentId,
-      t.sourceAgentId,
-      t.targetAgentId,
+      localDeviceId,
+      t.sourceDeviceId,
+      t.targetDeviceId,
     );
     const peer = peerId ? getPeer(peerId) : undefined;
     const isExpanded = !!expanded[t.id];
@@ -95,7 +97,7 @@ export function TransferListBody({
         key={t.id}
         transfer={t}
         actions={{
-          peerName: peer?.agentName ?? peerId?.slice(0, 8) ?? "-",
+          peerName: peer?.deviceName ?? peerId?.slice(0, 8) ?? "-",
           peerOnline: peer?.online ?? false,
           indented,
           progress,
@@ -104,8 +106,9 @@ export function TransferListBody({
           loading: !!actionLoading[t.id],
           isExpanded,
           inlineError: inlineErrors[t.id],
+          correlationId: inlineRefs[t.id] || null,
           unit,
-          localAgentId,
+          localDeviceId,
           onExpand: () => onToggleExpand(t),
           onPause: () => onPause(t),
           onResume: () => onResume(t),
@@ -141,7 +144,7 @@ export function TransferListBody({
   };
 
   const renderDispatchGroup = (group: DispatchGroup) => {
-    const peer = getPeer(group.targetAgentId);
+    const peer = getPeer(group.targetDeviceId);
     const isOpen = !!groupExpanded[group.dispatchId];
     const progress =
       group.totalSize > 0
@@ -160,7 +163,7 @@ export function TransferListBody({
         confirmedBytes={group.confirmedBytes}
         transferCount={group.transfers.length}
         createdAt={group.createdAt}
-        peerName={peer?.agentName ?? group.targetAgentId?.slice(0, 8) ?? "-"}
+        peerName={peer?.deviceName ?? group.targetDeviceId?.slice(0, 8) ?? "-"}
         peerOnline={peer?.online ?? false}
         progress={progress}
         isOpen={isOpen}

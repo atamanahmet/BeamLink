@@ -8,7 +8,7 @@ export type DispatchGroup = {
   confirmedBytes: number;
   status: string;
   createdAt: string;
-  targetAgentId: string;
+  targetDeviceId: string;
 };
 
 /**
@@ -54,7 +54,7 @@ export function groupTransfers(transfers: TransferSummary[]): {
       confirmedBytes: members.reduce((sum, t) => sum + t.confirmedBytes, 0),
       status: dispatchGroupStatus(members),
       createdAt: members[0].createdAt,
-      targetAgentId: members[0].targetAgentId,
+      targetDeviceId: members[0].targetDeviceId,
     }),
   );
 

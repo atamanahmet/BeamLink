@@ -2,13 +2,13 @@
  * Peer id for a transfer row: source when local is target, target when local is source.
  */
 export function resolveTransferPeerId(
-  localAgentId: string | null | undefined,
-  sourceAgentId: string | null | undefined,
-  targetAgentId: string | null | undefined,
+  localDeviceId: string | null | undefined,
+  sourceDeviceId: string | null | undefined,
+  targetDeviceId: string | null | undefined,
 ): string | null {
-  const local = localAgentId?.trim() || null;
-  const source = sourceAgentId?.trim() || null;
-  const target = targetAgentId?.trim() || null;
+  const local = localDeviceId?.trim() || null;
+  const source = sourceDeviceId?.trim() || null;
+  const target = targetDeviceId?.trim() || null;
 
   if (local != null && local === target) {
     return source;

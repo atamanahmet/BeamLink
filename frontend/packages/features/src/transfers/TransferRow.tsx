@@ -1,12 +1,14 @@
 import type { ReactNode } from "react";
 import type { TransferSummary } from "@beamlink/core";
 import { Box, Group, Paper, Stack, Text } from "@mantine/core";
+import { ErrorWithRef } from "../problem/ErrorWithRef.tsx";
 import type { SpeedUnit } from "./speedUnits.ts";
 import { formatBytes } from "./transferFormat.ts";
 import { TransferProgressBar } from "./TransferProgressBar.tsx";
 import { TransferRowTitle } from "./TransferRowTitle.tsx";
 import { TransferRowToolbar } from "./TransferRowToolbar.tsx";
 import { TransferSpeedLimitField } from "./TransferSpeedLimitField.tsx";
+import { mapTransferErrorCode } from "./transferErrors.ts";
 
 export type TransferRowActions = {
   peerName: string;
@@ -18,9 +20,10 @@ export type TransferRowActions = {
   loading: boolean;
   isExpanded: boolean;
   inlineError?: string;
+  correlationId?: string | null;
   childRows?: ReactNode;
   unit: SpeedUnit;
-  localAgentId?: string | null;
+  localDeviceId?: string | null;
   onExpand: () => void;
   onPause: () => void;
   onResume: () => void;
@@ -48,9 +51,10 @@ export function TransferRow({ transfer: t, actions }: TransferRowProps) {
     loading,
     isExpanded,
     inlineError,
+    correlationId,
     childRows,
     unit,
-    localAgentId = null,
+    localDeviceId = null,
     onExpand,
     onPause,
     onResume,
@@ -90,7 +94,7 @@ export function TransferRow({ transfer: t, actions }: TransferRowProps) {
           showPeer={!indented}
           elapsedLabel={elapsedLabel}
           isExpanded={isExpanded}
-          localAgentId={localAgentId}
+          localDeviceId={localDeviceId}
           onExpand={onExpand}
         />
         <TransferRowToolbar
@@ -154,10 +158,15 @@ export function TransferRow({ transfer: t, actions }: TransferRowProps) {
           {t.failureReason}
         </Text>
       ) : null}
-      {inlineError ? (
+      {t.status === "PAUSED" && t.failureReason === "INSUFFICIENT_DISK" ? (
         <Text mt="xs" size="xs" c="var(--bl-danger-text)">
-          {inlineError}
+          {mapTransferErrorCode("INSUFFICIENT_DISK")}
         </Text>
+      ) : null}
+      {inlineError ? (
+        <Box mt="xs" c="var(--bl-danger-text)">
+          <ErrorWithRef message={inlineError} correlationId={correlationId} />
+        </Box>
       ) : null}
     </Paper>
   );

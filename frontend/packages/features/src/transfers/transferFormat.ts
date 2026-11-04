@@ -22,7 +22,7 @@ export function formatBytes(bytes: number): string {
  * Formats an ISO date for UI lists. Empty input shows a dash.
  */
 export function formatDate(iso: string): string {
-  if (!iso) return "—";
+  if (!iso) return "-";
   const normalized = iso.replace(/(\.\d{3})\d+/, "$1");
   return new Date(normalized).toLocaleString();
 }

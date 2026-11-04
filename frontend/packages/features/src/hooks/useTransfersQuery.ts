@@ -1,5 +1,10 @@
 import { useSyncExternalStore } from "react";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import {
+  useInfiniteQuery,
+  useMutation,
+  useQuery,
+  useQueryClient,
+} from "@tanstack/react-query";
 import type { TransferApi, TransferSummary, TransferType } from "@beamlink/core";
 import {
   getTransferPollInterval,
@@ -26,6 +31,42 @@ export function useTransfersQuery(
     queryFn: () => api.getAllTransfers(),
     enabled,
     refetchInterval: (query) => getTransferPollInterval(query.state.data),
+  });
+}
+
+type TransfersPagedOptions = {
+  enabled?: boolean;
+  pageSize?: number;
+};
+
+/**
+ * Paged transfer list with poll and load more.
+ */
+export function useTransfersPagedQuery(
+  api: TransferApi,
+  options: TransfersPagedOptions = {},
+) {
+  const enabled = options.enabled ?? true;
+  const pageSize = options.pageSize ?? 50;
+  const getPage = api.getTransfersPage;
+
+  return useInfiniteQuery({
+    queryKey: ["transfers", "paged", pageSize],
+    queryFn: ({ pageParam }) => {
+      if (!getPage) {
+        throw new Error("getTransfersPage is required for paged transfers");
+      }
+      return getPage(pageParam, pageSize);
+    },
+    initialPageParam: 0,
+    getNextPageParam: (last, pages) =>
+      last.hasMore ? pages.length : undefined,
+    enabled: enabled && !!getPage,
+    refetchInterval: (query) => {
+      const items =
+        query.state.data?.pages.flatMap((p) => p.items) ?? [];
+      return getTransferPollInterval(items);
+    },
   });
 }
 
