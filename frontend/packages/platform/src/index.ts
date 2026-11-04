@@ -1,5 +1,10 @@
-/// <reference path="./windowElectronApi.d.ts" />
+import "./windowElectronApi.d.ts";
 
-export type { Platform } from "@beamlink/core";
+export type {
+  Platform,
+  PlatformCapabilities,
+  SharedFileItem,
+} from "@beamlink/core";
 export { createElectronPlatform } from "./createElectronPlatform.ts";
-export { PlatformProvider, usePlatform } from "./PlatformContext.tsx";
+export { PlatformProvider } from "./PlatformContext.tsx";
+export { usePlatform } from "./usePlatform.ts";

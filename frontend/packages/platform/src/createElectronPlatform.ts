@@ -2,19 +2,33 @@ import type { Platform } from "@beamlink/core";
 
 /**
  * Builds a Platform from window.electronAPI, reading session env once.
+ * Homedir falls back to the drive or root so sidebar shortcuts still mount.
  */
 export async function createElectronPlatform(): Promise<Platform> {
   const sep = window.electronAPI.getSep();
-  const homedir = window.electronAPI.getHomedir();
+  let homedir: string;
+  try {
+    homedir = await window.electronAPI.getHomedir();
+  } catch {
+    homedir = sep === "\\" ? "C:\\" : "/";
+    console.warn("[platform] homedir unavailable, using", homedir);
+  }
 
   return {
     env: { sep, homedir },
+    capabilities: {
+      themeEdit: true,
+      themeAdd: true,
+      transferHistory: true,
+      transferLogs: true,
+      warp: true,
+    },
     getPathForFiles: (files) =>
       Promise.resolve(window.electronAPI.getPathForFiles(files)),
-    getRoots: () => Promise.resolve(window.electronAPI.getRoots()),
-    readDir: (dirPath) => Promise.resolve(window.electronAPI.readDir(dirPath)),
-    mkdir: (dirPath) => Promise.resolve(window.electronAPI.mkdir(dirPath)),
-    exists: (dirPath) => Promise.resolve(window.electronAPI.exists(dirPath)),
+    getRoots: () => window.electronAPI.getRoots(),
+    readDir: (dirPath) => window.electronAPI.readDir(dirPath),
+    mkdir: (dirPath) => window.electronAPI.mkdir(dirPath),
+    exists: (dirPath) => window.electronAPI.exists(dirPath),
     onBackendStatus: (cb) =>
       Promise.resolve(window.electronAPI.onBackendStatus(cb)),
     getBackendStatus: () => window.electronAPI.getBackendStatus(),
