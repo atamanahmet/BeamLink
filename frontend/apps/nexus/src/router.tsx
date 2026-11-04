@@ -3,7 +3,13 @@ import { RouteErrorScreen } from "@beamlink/ui";
 import App from "./App";
 import { Dashboard } from "./components/Dashboard";
 import { Login } from "./components/Login";
-import { RedirectIfAuthenticated, RequireAuth } from "./RequireAuth";
+import { ResetPassword } from "./components/ResetPassword";
+import { Setup } from "./components/Setup";
+import {
+  RedirectIfAuthenticated,
+  RequireAuth,
+  RequireSetup,
+} from "./RequireAuth";
 
 export const router = createHashRouter([
   {
@@ -12,9 +18,14 @@ export const router = createHashRouter([
     errorElement: <RouteErrorScreen />,
     children: [
       {
+        element: <RequireSetup />,
+        children: [{ path: "setup", element: <Setup /> }],
+      },
+      {
         element: <RedirectIfAuthenticated />,
         children: [
           { path: "login", element: <Login /> },
+          { path: "reset-password", element: <ResetPassword /> },
         ],
       },
       {

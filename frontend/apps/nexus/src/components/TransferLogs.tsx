@@ -80,11 +80,11 @@ export const TransferLogs = () => {
               <Table.Td>
                 <Group gap="md" wrap="nowrap">
                   <Text c="var(--bl-text-primary)" fw={500}>
-                    {log.fromAgentName || "Unknown"}
+                    {log.fromDeviceName || "Unknown"}
                   </Text>
                   <ArrowRight size={16} color="var(--bl-primary)" />
                   <Text c="var(--bl-text-primary)" fw={500}>
-                    {log.toAgentName || "Unknown"}
+                    {log.toDeviceName || "Unknown"}
                   </Text>
                 </Group>
               </Table.Td>

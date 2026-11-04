@@ -1,10 +1,11 @@
 import type {
-  DispatchResultItem,
   HealthApi,
   InitiateDispatchRequest,
+  InitiateDispatchResponse,
   PeerSummary,
   PeersApi,
   TransferApi,
+  TransferListPage,
   TransferLogEntry,
   TransferSummary,
   TransferType,
@@ -14,11 +15,26 @@ import { apiClient, healthClient } from "./client";
 const typePath = (type: TransferType) => type.toLowerCase();
 
 /**
+ * One page of admin transfers.
+ */
+async function fetchTransfersPage(
+  page: number,
+  size = 50,
+): Promise<TransferListPage> {
+  return (
+    await apiClient.get<TransferListPage>("/admin/transfers", {
+      params: { page, size },
+    })
+  ).data;
+}
+
+/**
  * Nexus transfer HTTP API under /admin.
  */
 export const transferApi: TransferApi = {
-  getAllTransfers: async () =>
-    (await apiClient.get<TransferSummary[]>("/admin/transfers")).data,
+  getTransfersPage: fetchTransfersPage,
+
+  getAllTransfers: async () => (await fetchTransfersPage(0, 50)).items,
 
   getTransferLogs: async () =>
     (await apiClient.get<TransferLogEntry[]>("/admin/logs")).data,
@@ -40,8 +56,10 @@ export const transferApi: TransferApi = {
   },
 
   initiateDispatch: async (req: InitiateDispatchRequest) =>
-    (await apiClient.post<DispatchResultItem[]>("/admin/transfers/send", req))
-      .data,
+    (await apiClient.post<InitiateDispatchResponse>(
+      "/admin/transfers/send",
+      req,
+    )).data,
 
   pauseTransfer: async (id, type) => {
     await apiClient.post(`/admin/transfers/${typePath(type)}/${id}/pause`);
@@ -76,11 +94,11 @@ export const transferApi: TransferApi = {
  */
 export const peersApi: PeersApi = {
   getPeers: async (): Promise<PeerSummary[]> => {
-    const res = await apiClient.get("/peers");
+    const res = await apiClient.get("/peers/summary");
     const raw = res.data.peers ?? res.data;
     return (raw as Array<Record<string, unknown>>).map((p) => ({
-      id: String(p.id ?? p.agentId),
-      agentName: String(p.agentName ?? ""),
+      id: String(p.id),
+      deviceName: String(p.deviceName ?? ""),
       ipAddress: String(p.ipAddress ?? ""),
       port: Number(p.port ?? 0),
       online: Boolean(p.online),

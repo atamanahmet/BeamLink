@@ -1,5 +1,6 @@
 import { Clock } from "lucide-react";
 import { Center, Loader, Stack, Text, Title } from "@mantine/core";
+import { DEVICE_KEY_LABEL } from "@beamlink/core";
 import { formatDate } from "@beamlink/features";
 import {
   useNexusAdminMutations,
@@ -9,10 +10,10 @@ import { ApprovalCard } from "./ApprovalCard";
 
 export const PendingApprovals = () => {
   const { data, isLoading } = useNexusPendingQuery();
-  const { approveAgent, rejectAgent, approveRename, rejectRename } =
+  const { approveDevice, rejectDevice, approveRename, rejectRename } =
     useNexusAdminMutations();
 
-  const pendingAgents = data?.agents ?? [];
+  const pendingDevices = data?.devices ?? [];
   const pendingRenames = data?.renames ?? [];
 
   if (isLoading) {
@@ -23,7 +24,7 @@ export const PendingApprovals = () => {
     );
   }
 
-  if (pendingAgents.length === 0 && pendingRenames.length === 0) {
+  if (pendingDevices.length === 0 && pendingRenames.length === 0) {
     return (
       <Center py="xl">
         <Stack align="center" gap="md">
@@ -37,20 +38,26 @@ export const PendingApprovals = () => {
   return (
     <Stack gap="md">
       <Title order={3} c="var(--bl-primary-text)">
-        Pending Approvals ({pendingAgents.length + pendingRenames.length})
+        Pending Approvals ({pendingDevices.length + pendingRenames.length})
       </Title>
 
       <Stack gap="md">
-        {pendingAgents.map((agent) => (
+        {pendingDevices.map((device) => (
           <ApprovalCard
-            key={agent.id}
-            title={agent.name}
+            key={device.id}
+            title={device.name}
             lines={[
-              `IP: ${agent.ipAddress}:${agent.port}`,
-              `Requested At: ${formatDate(agent.renameRequestedAt ?? "")}`,
+              `IP: ${device.ipAddress}:${device.port}`,
+              `${DEVICE_KEY_LABEL}: ${device.fingerprint ?? ""}`,
+              `Requested At: ${formatDate(device.registeredAt ?? "")}`,
             ]}
-            onApprove={() => approveAgent.mutate(agent.id)}
-            onReject={() => rejectAgent.mutate(agent.id)}
+            approvePreview={{
+              name: device.name,
+              ip: `${device.ipAddress}:${device.port}`,
+              fingerprint: device.fingerprint ?? "",
+            }}
+            onApprove={() => approveDevice.mutate(device.id)}
+            onReject={() => rejectDevice.mutate(device.id)}
           />
         ))}
         {pendingRenames.length > 0 ? (
@@ -65,7 +72,7 @@ export const PendingApprovals = () => {
                   key={rename.id}
                   title={`${rename.name} → ${rename.requestedName}`}
                   lines={[
-                    `Agent ID: ${rename.id}`,
+                    `Device ID: ${rename.id}`,
                     `Requested: ${formatDate(rename.renameRequestedAt ?? "")}`,
                   ]}
                   onApprove={() => approveRename.mutate(rename.id)}

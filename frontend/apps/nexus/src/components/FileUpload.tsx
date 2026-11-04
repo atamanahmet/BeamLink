@@ -1,36 +1,28 @@
 import { useState, useRef } from "react";
-import { Alert, Stack, Title } from "@mantine/core";
-import axios from "axios";
+import { Stack, Title } from "@mantine/core";
 import { usePlatform } from "@beamlink/platform";
 import {
+  BigDropDialog,
   DropZone,
   FileBrowserModal,
   PeerSelect,
+  UploadBanner,
+  dispatchErrorMessage,
+  dispatchNotice,
+  showTransferActionError,
   getDropStatus,
+  shouldOpenTransfers,
   type PeerOption,
+  type UploadBannerKind,
+  useDropConfirm,
   usePeersQuery,
 } from "@beamlink/features";
+import { problemFromUnknown } from "@beamlink/core";
 import { transferApi, peersApi } from "../api/transferApi";
 import { useAuthStore } from "../store/authStore";
 
 interface FileUploadProps {
   onTransferStarted: () => void;
-}
-
-/**
- * Reads a dispatch error message from axios or Error.
- */
-function dispatchErrorMessage(err: unknown): string {
-  if (axios.isAxiosError(err)) {
-    const data = err.response?.data;
-    if (data && typeof data === "object" && "message" in data) {
-      const message = data.message;
-      if (typeof message === "string" && message.length > 0) return message;
-    }
-    if (err.message) return err.message;
-  }
-  if (err instanceof Error && err.message) return err.message;
-  return "Dispatch failed.";
 }
 
 export const FileUpload = ({ onTransferStarted }: FileUploadProps) => {
@@ -45,6 +37,8 @@ export const FileUpload = ({ onTransferStarted }: FileUploadProps) => {
     () => localStorage.getItem("lastSelectedPeer") ?? "",
   );
   const [message, setMessage] = useState("");
+  const [messageKind, setMessageKind] = useState<UploadBannerKind>("error");
+  const [correlationId, setCorrelationId] = useState<string | null>(null);
   const [isSending, setIsSending] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
   const dragCounter = useRef(0);
@@ -59,15 +53,19 @@ export const FileUpload = ({ onTransferStarted }: FileUploadProps) => {
 
   const dispatch = async (paths: string[]) => {
     if (!selectedPeer) {
-      setMessage("Select a destination agent first.");
+      setCorrelationId(null);
+      setMessage("Select a destination peer first.");
       return;
     }
     if (isOffline) {
-      setMessage("Selected agent is offline.");
+      setCorrelationId(null);
+      setMessage("Peer is offline or has receive turned off");
       return;
     }
     const validPaths = paths.filter(Boolean);
     if (validPaths.length === 0) {
+      setMessageKind("error");
+      setCorrelationId(null);
       setMessage("No valid paths selected.");
       return;
     }
@@ -75,22 +73,29 @@ export const FileUpload = ({ onTransferStarted }: FileUploadProps) => {
     const peer = selectedPeerObject!;
     setIsSending(true);
     setMessage("");
+    setCorrelationId(null);
 
     try {
       const results = await transferApi.initiateDispatch({
         paths: validPaths,
-        targetAgentId: peer.id,
+        targetDeviceId: peer.id,
         targetIp: peer.ipAddress,
         targetPort: peer.port,
       });
-
-      if (results.length > 0) {
+      const notice = dispatchNotice(results.items.length, results.skippedCount);
+      if (notice) {
+        setMessageKind(results.skippedCount > 0 ? "notice" : "error");
+        setMessage(notice);
+      }
+      if (shouldOpenTransfers(results.items.length, results.skippedCount)) {
         onTransferStarted();
-      } else {
-        setMessage("Nothing was initiated. Check the selected paths.");
       }
     } catch (err: unknown) {
-      setMessage(`Failed: ${dispatchErrorMessage(err)}`);
+      setMessageKind("error");
+      const text = dispatchErrorMessage(err);
+      setMessage(text);
+      setCorrelationId(problemFromUnknown(err).correlationId);
+      showTransferActionError(err, text);
     } finally {
       setIsSending(false);
     }
@@ -112,20 +117,24 @@ export const FileUpload = ({ onTransferStarted }: FileUploadProps) => {
     e.preventDefault();
   };
 
+  const dropConfirm = useDropConfirm({
+    getPathForFiles: (files) => platform.getPathForFiles(files),
+    onAccept: async (paths) => {
+      if (paths.length > 0) {
+        await dispatch(paths);
+      } else {
+        setCorrelationId(null);
+        setMessage("Could not read file paths. Try using Choose Files instead.");
+      }
+    },
+    peerName: selectedPeerObject?.deviceName ?? "",
+  });
+
   const handleDrop = async (e: React.DragEvent) => {
     e.preventDefault();
     dragCounter.current = 0;
     setIsDragging(false);
-
-    const files = Array.from(e.dataTransfer.files);
-    if (files.length === 0) return;
-
-    const paths = await platform.getPathForFiles(files);
-    if (paths.length > 0) {
-      await dispatch(paths);
-    } else {
-      setMessage("Could not read file paths. Try using Choose Files instead.");
-    }
+    await dropConfirm.onDrop(e.dataTransfer);
   };
 
   const status = getDropStatus({
@@ -135,8 +144,8 @@ export const FileUpload = ({ onTransferStarted }: FileUploadProps) => {
     isDragging,
   });
   const peerOptions: PeerOption[] = peers.map((p) => ({
-    agentId: p.id,
-    agentName: p.agentName,
+    deviceId: p.id,
+    deviceName: p.deviceName,
     ipAddress: p.ipAddress,
     port: p.port,
     online: p.online,
@@ -166,9 +175,11 @@ export const FileUpload = ({ onTransferStarted }: FileUploadProps) => {
       />
 
       {message ? (
-        <Alert color="danger" variant="light">
-          {message}
-        </Alert>
+        <UploadBanner
+          message={message}
+          kind={messageKind}
+          correlationId={correlationId}
+        />
       ) : null}
 
       <FileBrowserModal
@@ -178,6 +189,13 @@ export const FileUpload = ({ onTransferStarted }: FileUploadProps) => {
           setShowBrowser(false);
           await dispatch(paths);
         }}
+      />
+
+      <BigDropDialog
+        open={dropConfirm.open}
+        body={dropConfirm.body}
+        onConfirm={dropConfirm.confirmPendingDrop}
+        onCancel={dropConfirm.cancelPendingDrop}
       />
     </Stack>
   );

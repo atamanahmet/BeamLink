@@ -16,28 +16,28 @@ export function useNexusStatsQuery(api: NexusAdminApi = nexusAdminApi) {
 }
 
 /**
- * Approved agents every 3s.
+ * Approved devices every 3s.
  */
-export function useNexusAgentsQuery(api: NexusAdminApi = nexusAdminApi) {
+export function useNexusDevicesQuery(api: NexusAdminApi = nexusAdminApi) {
   return useQuery({
-    queryKey: ["nexus", "agents", "approved"],
-    queryFn: () => api.getApprovedAgents(),
+    queryKey: ["nexus", "devices", "approved"],
+    queryFn: () => api.getApprovedDevices(),
     refetchInterval: 3000,
   });
 }
 
 /**
- * Pending agents and renames.
+ * Pending devices and renames.
  */
 export function useNexusPendingQuery(api: NexusAdminApi = nexusAdminApi) {
   return useQuery({
-    queryKey: ["nexus", "agents", "pending"],
+    queryKey: ["nexus", "devices", "pending"],
     queryFn: async () => {
-      const [agents, renames] = await Promise.all([
-        api.getPendingAgents(),
+      const [devices, renames] = await Promise.all([
+        api.getPendingDevices(),
         api.getPendingRenames(),
       ]);
-      return { agents, renames };
+      return { devices, renames };
     },
   });
 }
@@ -53,45 +53,59 @@ export function useNexusTransferLogsQuery(api: NexusAdminApi = nexusAdminApi) {
 }
 
 /**
+ * Admin audit log page. No polling.
+ */
+export function useNexusAuditLogQuery(
+  page: number,
+  size = 50,
+  api: NexusAdminApi = nexusAdminApi,
+) {
+  return useQuery({
+    queryKey: ["nexus", "audit-log", page, size],
+    queryFn: () => api.getAuditLog(page, size),
+  });
+}
+
+/**
  * Approve / reject / remove mutations for nexus admin.
  */
 export function useNexusAdminMutations(api: NexusAdminApi = nexusAdminApi) {
   const queryClient = useQueryClient();
 
-  const invalidateAgents = () => {
-    void queryClient.invalidateQueries({ queryKey: ["nexus", "agents"] });
+  const invalidateDevices = () => {
+    void queryClient.invalidateQueries({ queryKey: ["nexus", "devices"] });
     void queryClient.invalidateQueries({ queryKey: ["nexus", "stats"] });
   };
 
-  const approveAgent = useMutation({
-    mutationFn: (id: string) => api.approveAgent(id),
-    onSuccess: invalidateAgents,
+  const approveDevice = useMutation({
+    mutationFn: (id: string) => api.approveDevice(id),
+    onSuccess: invalidateDevices,
   });
 
-  const rejectAgent = useMutation({
-    mutationFn: (id: string) => api.rejectAgent(id),
-    onSuccess: invalidateAgents,
+  const rejectDevice = useMutation({
+    mutationFn: (id: string) => api.rejectDevice(id),
+    onSuccess: invalidateDevices,
   });
 
-  const removeAgent = useMutation({
-    mutationFn: (id: string) => api.removeAgent(id),
-    onSuccess: invalidateAgents,
+  const removeDevice = useMutation({
+    mutationFn: (id: string) => api.removeDevice(id),
+    onSuccess: invalidateDevices,
   });
 
   const approveRename = useMutation({
     mutationFn: (id: string) => api.approveRename(id),
-    onSuccess: invalidateAgents,
+    onSuccess: invalidateDevices,
   });
 
   const rejectRename = useMutation({
     mutationFn: (id: string) => api.rejectRename(id),
-    onSuccess: invalidateAgents,
+    onSuccess: invalidateDevices,
   });
 
   return {
-    approveAgent,
-    rejectAgent,
-    removeAgent,
+    approveDevice,
+    rejectDevice,
+    removeDevice,
     approveRename,
     rejectRename,
   };

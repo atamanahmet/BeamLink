@@ -11,6 +11,7 @@ export function Component() {
       peersApi={peersApi}
       settingsApi={settingsApi}
       enabled={enabled}
+      pageSize={50}
     />
   );
 }

@@ -4,7 +4,7 @@ import { formatBytes } from "@beamlink/features";
 
 interface StatisticsProps {
   stats: {
-    agentStats: {
+    deviceStats: {
       total: number;
       online: number;
       offline: number;
@@ -22,26 +22,26 @@ export const Statistics = ({ stats }: StatisticsProps) => {
   const statCards = [
     {
       icon: Users,
-      label: "Total Agents",
-      value: stats.agentStats.total,
+      label: "Total Devices",
+      value: stats.deviceStats.total,
       color: "orange",
     },
     {
       icon: Wifi,
       label: "Online",
-      value: stats.agentStats.online,
+      value: stats.deviceStats.online,
       color: "green",
     },
     {
       icon: WifiOff,
       label: "Offline",
-      value: stats.agentStats.offline,
+      value: stats.deviceStats.offline,
       color: "red",
     },
     {
       icon: Clock,
       label: "Pending",
-      value: stats.agentStats.pending,
+      value: stats.deviceStats.pending,
       color: "red",
     },
     {

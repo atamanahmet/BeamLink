@@ -1,22 +1,52 @@
+import { useState } from "react";
 import { Check, X } from "lucide-react";
 import { Button, Group, Paper, Stack, Text, Title } from "@mantine/core";
+import { DEVICE_KEY_LABEL } from "@beamlink/core";
+import { ConfirmDialog } from "@beamlink/features";
 
 export type ApprovalCardProps = {
   title: string;
   lines: string[];
+  approvePreview?: {
+    name: string;
+    ip: string;
+    fingerprint: string;
+  };
   onApprove: () => void;
   onReject: () => void;
 };
 
 /**
- * One pending agent or rename approval row.
+ * One pending device or rename approval row.
  */
 export function ApprovalCard({
   title,
   lines,
+  approvePreview,
   onApprove,
   onReject,
 }: ApprovalCardProps) {
+  const [confirmOpen, setConfirmOpen] = useState(false);
+
+  /**
+   * Opens the approve dialog when preview data is set.
+   */
+  const handleApproveClick = () => {
+    if (approvePreview) {
+      setConfirmOpen(true);
+      return;
+    }
+    onApprove();
+  };
+
+  /**
+   * Closes the dialog and runs the approve action.
+   */
+  const handleConfirm = () => {
+    setConfirmOpen(false);
+    onApprove();
+  };
+
   return (
     <Paper withBorder p="md" radius="md">
       <Group justify="space-between" align="center" wrap="wrap">
@@ -35,7 +65,7 @@ export function ApprovalCard({
           <Button
             color="success"
             leftSection={<Check size={16} />}
-            onClick={onApprove}
+            onClick={handleApproveClick}
           >
             Approve
           </Button>
@@ -48,6 +78,16 @@ export function ApprovalCard({
           </Button>
         </Group>
       </Group>
+      {approvePreview ? (
+        <ConfirmDialog
+          open={confirmOpen}
+          title={approvePreview.name}
+          body={`IP: ${approvePreview.ip}\n${DEVICE_KEY_LABEL}: ${approvePreview.fingerprint}`}
+          confirmLabel="Approve"
+          onConfirm={handleConfirm}
+          onCancel={() => setConfirmOpen(false)}
+        />
+      ) : null}
     </Paper>
   );
 }

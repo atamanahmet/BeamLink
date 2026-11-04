@@ -1,7 +1,7 @@
 import { apiClient } from "./client";
 import type { TransferLogEntry } from "@beamlink/core";
 
-export type NexusAgent = {
+export type NexusDevice = {
   id: string;
   name: string;
   ipAddress: string;
@@ -13,10 +13,22 @@ export type NexusAgent = {
   renameRequestedAt?: string;
   lastSeen?: string;
   fileCount?: number;
+  fingerprint?: string;
+};
+
+export type AuditLogEntry = {
+  id: number;
+  occurredAt: string;
+  eventType: string;
+  outcome: "SUCCESS" | "FAILED";
+  sourceAddress: string | null;
+  targetDeviceId: string | null;
+  detail: string | null;
 };
 
 export type NexusStats = {
-  agentStats: {
+  tlsFingerprint?: string;
+  deviceStats: {
     total: number;
     online: number;
     offline: number;
@@ -34,14 +46,15 @@ export type NexusStats = {
  */
 export interface NexusAdminApi {
   getStats: () => Promise<NexusStats>;
-  getAgents: () => Promise<NexusAgent[]>;
-  getApprovedAgents: () => Promise<NexusAgent[]>;
-  getPendingAgents: () => Promise<NexusAgent[]>;
-  getPendingRenames: () => Promise<NexusAgent[]>;
+  getDevices: () => Promise<NexusDevice[]>;
+  getApprovedDevices: () => Promise<NexusDevice[]>;
+  getPendingDevices: () => Promise<NexusDevice[]>;
+  getPendingRenames: () => Promise<NexusDevice[]>;
   getTransferLogs: () => Promise<TransferLogEntry[]>;
-  approveAgent: (id: string) => Promise<void>;
-  rejectAgent: (id: string) => Promise<void>;
-  removeAgent: (id: string) => Promise<void>;
+  getAuditLog: (page: number, size: number) => Promise<AuditLogEntry[]>;
+  approveDevice: (id: string) => Promise<void>;
+  rejectDevice: (id: string) => Promise<void>;
+  removeDevice: (id: string) => Promise<void>;
   approveRename: (id: string) => Promise<void>;
   rejectRename: (id: string) => Promise<void>;
 }
@@ -53,38 +66,45 @@ export const nexusAdminApi: NexusAdminApi = {
   getStats: async () =>
     (await apiClient.get<NexusStats>("/admin/dashboard/stats")).data,
 
-  getAgents: async () =>
-    (await apiClient.get<NexusAgent[]>("/admin/agents")).data,
+  getDevices: async () =>
+    (await apiClient.get<NexusDevice[]>("/admin/devices")).data,
 
-  getApprovedAgents: async () =>
-    (await apiClient.get<NexusAgent[]>("/admin/agents/approved")).data,
+  getApprovedDevices: async () =>
+    (await apiClient.get<NexusDevice[]>("/admin/devices/approved")).data,
 
-  getPendingAgents: async () =>
-    (await apiClient.get<NexusAgent[]>("/admin/agents/pending")).data,
+  getPendingDevices: async () =>
+    (await apiClient.get<NexusDevice[]>("/admin/devices/pending")).data,
 
   getPendingRenames: async () =>
-    (await apiClient.get<NexusAgent[]>("/admin/agents/rename-pending")).data,
+    (await apiClient.get<NexusDevice[]>("/admin/devices/rename-pending")).data,
 
   getTransferLogs: async () =>
     (await apiClient.get<TransferLogEntry[]>("/admin/logs")).data,
 
-  approveAgent: async (id) => {
-    await apiClient.post(`/admin/agents/${id}/approve`);
+  getAuditLog: async (page, size) =>
+    (
+      await apiClient.get<AuditLogEntry[]>("/admin/audit", {
+        params: { page, size },
+      })
+    ).data,
+
+  approveDevice: async (id) => {
+    await apiClient.post(`/admin/devices/${id}/approve`);
   },
 
-  rejectAgent: async (id) => {
-    await apiClient.post(`/admin/agents/${id}/reject`);
+  rejectDevice: async (id) => {
+    await apiClient.post(`/admin/devices/${id}/reject`);
   },
 
-  removeAgent: async (id) => {
-    await apiClient.delete(`/admin/agents/${id}`);
+  removeDevice: async (id) => {
+    await apiClient.delete(`/admin/devices/${id}`);
   },
 
   approveRename: async (id) => {
-    await apiClient.post(`/admin/agents/${id}/rename/approve`);
+    await apiClient.post(`/admin/devices/${id}/rename/approve`);
   },
 
   rejectRename: async (id) => {
-    await apiClient.post(`/admin/agents/${id}/rename/reject`);
+    await apiClient.post(`/admin/devices/${id}/rename/reject`);
   },
 };

@@ -9,6 +9,7 @@ import {
   Settings,
 } from "lucide-react";
 import { AppFrame, WarpBackground } from "@beamlink/ui";
+import { usePlatform } from "@beamlink/platform";
 import {
   useHasActiveTransfers,
   useTransfersQuery,
@@ -18,6 +19,7 @@ import { transferApi } from "../api/transferApi";
 import { useAuthStore } from "../store/authStore";
 
 export const Dashboard = () => {
+  const { capabilities } = usePlatform();
   const status = useAuthStore((s) => s.status);
   useTransfersQuery(transferApi, { enabled: status === "authenticated" });
   const hasActive = useHasActiveTransfers();
@@ -25,11 +27,12 @@ export const Dashboard = () => {
   const [warpActive, setWarpActive] = useState(false);
   const warpOffTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  if (hasActive && !warpActive) {
+  if (capabilities.warp && hasActive && !warpActive) {
     setWarpActive(true);
   }
 
   useEffect(() => {
+    if (!capabilities.warp) return;
     if (hasActive) {
       if (warpOffTimer.current) {
         clearTimeout(warpOffTimer.current);
@@ -47,11 +50,42 @@ export const Dashboard = () => {
         warpOffTimer.current = null;
       }
     };
-  }, [hasActive]);
+  }, [capabilities.warp, hasActive]);
 
   const navigate = useNavigate();
   const location = useLocation();
   const activeKey = location.pathname.replace(/^\//, "") || "upload";
+
+  const navItems = [
+    {
+      key: "upload",
+      label: "Upload",
+      to: "/upload",
+      icon: <Upload size={16} />,
+    },
+    {
+      key: "network",
+      label: "Dashboard",
+      to: "/network",
+      icon: <LayoutDashboard size={16} />,
+    },
+    ...(capabilities.transferHistory
+      ? [
+          {
+            key: "transfers",
+            label: "Transfers",
+            to: "/transfers",
+            icon: <FolderOpen size={16} />,
+          },
+        ]
+      : []),
+    {
+      key: "settings",
+      label: "Settings",
+      to: "/settings",
+      icon: <Settings size={16} />,
+    },
+  ];
 
   return (
     <div
@@ -61,39 +95,14 @@ export const Dashboard = () => {
         overflow: "hidden",
       }}
     >
-      <WarpBackground active={warpActive} />
+      {capabilities.warp ? <WarpBackground active={warpActive} /> : null}
 
       <div style={{ position: "relative", zIndex: 10, height: "100%" }}>
         <AppFrame
           brand="BeamLink Nexus"
           activeKey={activeKey}
           onNavigate={(to) => navigate(to)}
-          navItems={[
-            {
-              key: "upload",
-              label: "Upload",
-              to: "/upload",
-              icon: <Upload size={16} />,
-            },
-            {
-              key: "network",
-              label: "Dashboard",
-              to: "/network",
-              icon: <LayoutDashboard size={16} />,
-            },
-            {
-              key: "transfers",
-              label: "Transfers",
-              to: "/transfers",
-              icon: <FolderOpen size={16} />,
-            },
-            {
-              key: "settings",
-              label: "Settings",
-              to: "/settings",
-              icon: <Settings size={16} />,
-            },
-          ]}
+          navItems={navItems}
           footer={
             <Button
               variant="subtle"

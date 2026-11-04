@@ -1,21 +1,23 @@
 import { useState } from "react";
 import { Activity, Users, Clock } from "lucide-react";
 import { Badge, Paper, Stack, Tabs, Text, Title } from "@mantine/core";
-import { AgentList } from "./AgentList";
+import { usePlatform } from "@beamlink/platform";
+import { DeviceList } from "./DeviceList";
 import { PendingApprovals } from "./PendingApprovals";
 import { Statistics } from "./Statistics";
 import { TransferLogs } from "./TransferLogs";
 import { useNexusStatsQuery } from "../hooks/useNexusAdmin";
 
 export const NetworkView = () => {
+  const { capabilities } = usePlatform();
   const { data: stats } = useNexusStatsQuery();
 
-  const [activeTab, setActiveTab] = useState<"agents" | "pending" | "logs">(
-    "agents",
+  const [activeTab, setActiveTab] = useState<"devices" | "pending" | "logs">(
+    "devices",
   );
 
   const resolvedStats = stats ?? {
-    agentStats: {
+    deviceStats: {
       total: 0,
       online: 0,
       offline: 0,
@@ -32,13 +34,13 @@ export const NetworkView = () => {
    * Maps Mantine tab value (string or null) onto activeTab.
    */
   const handleTabChange = (value: string | null) => {
-    if (value === "agents" || value === "pending" || value === "logs") {
+    if (value === "devices" || value === "pending" || value === "logs") {
       setActiveTab(value);
     }
   };
 
   const pendingCount =
-    resolvedStats.agentStats.pending + resolvedStats.agentStats.pendingRename;
+    resolvedStats.deviceStats.pending + resolvedStats.deviceStats.pendingRename;
 
   return (
     <Stack gap="xl" maw={1280} mx="auto" w="100%">
@@ -63,11 +65,11 @@ export const NetworkView = () => {
         <Tabs value={activeTab} onChange={handleTabChange}>
           <Tabs.List grow>
             <Tabs.Tab
-              value="agents"
+              value="devices"
               leftSection={<Users size={20} />}
               c="var(--bl-primary-text)"
             >
-              Agents
+              Devices
             </Tabs.Tab>
 
             <Tabs.Tab
@@ -92,20 +94,24 @@ export const NetworkView = () => {
               Pending Approvals
             </Tabs.Tab>
 
-            <Tabs.Tab
-              value="logs"
-              leftSection={<Activity size={20} />}
-              c="var(--bl-primary-text)"
-            >
-              Transfer Logs
-            </Tabs.Tab>
+            {capabilities.transferLogs ? (
+              <Tabs.Tab
+                value="logs"
+                leftSection={<Activity size={20} />}
+                c="var(--bl-primary-text)"
+              >
+                Transfer Logs
+              </Tabs.Tab>
+            ) : null}
           </Tabs.List>
         </Tabs>
 
         <Stack p="md" gap="md">
-          {activeTab === "agents" && <AgentList />}
+          {activeTab === "devices" && <DeviceList />}
           {activeTab === "pending" && <PendingApprovals />}
-          {activeTab === "logs" && <TransferLogs />}
+          {activeTab === "logs" && capabilities.transferLogs ? (
+            <TransferLogs />
+          ) : null}
         </Stack>
       </Paper>
     </Stack>

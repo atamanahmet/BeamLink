@@ -42,6 +42,13 @@ export const settingsApi: SettingsApi = {
     await apiClient.put("/settings/resume-policy", { resumePolicy: value });
   },
 
+  getMinFreeSpace: async () =>
+    (await apiClient.get<{ value: number }>("/settings/min-free-space")).data,
+
+  putMinFreeSpace: async (value) => {
+    await apiClient.put("/settings/min-free-space", { value });
+  },
+
   openUploadsFolder: async () => {
     await apiClient.post("/storage/open-uploads-folder");
   },
@@ -52,5 +59,17 @@ export const settingsApi: SettingsApi = {
 
   changeCredentials: async (req) => {
     await apiClient.post("/auth/change-credentials", req);
+  },
+
+  resetNetworkData: async (force) => {
+    await apiClient.post("/admin/reset/network", null, {
+      params: { force: force === true },
+    });
+  },
+
+  factoryReset: async (force) => {
+    await apiClient.post("/admin/reset/factory", null, {
+      params: { force: force === true },
+    });
   },
 };

@@ -6,7 +6,7 @@ export const apiClient = axios.create({
     ? "/api/nexus"
     : "http://localhost:7472/api/nexus",
   timeout: 10000,
-  withCredentials: true,
+  withCredentials: false,
 });
 
 export const healthClient = axios.create({
@@ -27,8 +27,16 @@ apiClient.interceptors.response.use(
   (error) => {
     const status = error.response?.status;
     const url = String(error.config?.url ?? "");
-    if (status === 401 && !url.includes("/auth/login")) {
+    if (
+      status === 401 &&
+      !url.includes("/auth/login") &&
+      !url.includes("/auth/setup") &&
+      !url.includes("/auth/status") &&
+      !url.includes("/auth/reset-password") &&
+      !url.includes("/auth/erase")
+    ) {
       useAuthStore.getState().clearSession();
+      void window.electronAPI?.clearAuthToken?.();
     }
     return Promise.reject(error);
   },
