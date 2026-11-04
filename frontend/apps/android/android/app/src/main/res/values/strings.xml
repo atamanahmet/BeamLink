@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">BeamLink Peer</string>
+    <string name="title_activity_main">BeamLink Peer</string>
+    <string name="package_name">com.beamlink.peer</string>
+    <string name="custom_url_scheme">com.beamlink.peer</string>
+</resources>
