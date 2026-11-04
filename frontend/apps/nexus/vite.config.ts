@@ -1,11 +1,31 @@
-import { defineConfig } from "vite";
+import { defineConfig, type Plugin } from "vite";
 import react from "@vitejs/plugin-react";
 import electron from "vite-plugin-electron";
 import renderer from "vite-plugin-electron-renderer";
 
+const PACKAGED_CSP =
+  "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; connect-src http://localhost:9090 http://localhost:7472; img-src 'self' data:; font-src 'self' data:; object-src 'none'; base-uri 'none'; form-action 'none'";
+
+/**
+ * Injects a CSP meta tag for the packaged renderer only.
+ */
+function packagedCspMeta(): Plugin {
+  return {
+    name: "packaged-csp-meta",
+    apply: "build",
+    transformIndexHtml(html) {
+      return html.replace(
+        "<head>",
+        `<head>\n    <meta http-equiv="Content-Security-Policy" content="${PACKAGED_CSP}">`,
+      );
+    },
+  };
+}
+
 export default defineConfig({
   plugins: [
     react(),
+    packagedCspMeta(),
     electron([
       {
         /**
@@ -16,6 +36,7 @@ export default defineConfig({
         vite: {
           build: {
             outDir: "dist-electron",
+            sourcemap: false,
           },
         },
       },
@@ -31,6 +52,7 @@ export default defineConfig({
         vite: {
           build: {
             outDir: "dist-electron",
+            sourcemap: false,
           },
         },
       },
@@ -38,6 +60,9 @@ export default defineConfig({
     renderer(),
   ],
   base: "./",
+  build: {
+    sourcemap: false,
+  },
   server: {
     port: 5173,
     strictPort: true,

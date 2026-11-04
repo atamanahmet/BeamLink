@@ -6,20 +6,66 @@ import {
   Tray,
   Menu,
   nativeImage,
+  safeStorage,
+  session,
 } from "electron";
 import {
+  isExactAppSenderUrl,
   isHexColor,
   readSavedWindowTheme,
+  registerFileHandlers,
+  rejectNonAppSender,
   saveWindowTheme,
+  type AppSenderGuardOptions,
 } from "@beamlink/electron-main";
 import { spawn, ChildProcess } from "child_process";
+import { randomBytes } from "crypto";
 import path from "path";
 import fs from "fs";
+import { pathToFileURL } from "url";
 
 const DEFAULT_WINDOW_THEME = {
   background: "#121212",
   foreground: "#f5f5f5",
 };
+
+const PACKAGED = process.env.NODE_ENV !== "development";
+const DEV_ORIGIN = "http://localhost:5173";
+const APP_INDEX_URL = pathToFileURL(
+  path.join(__dirname, "../dist/index.html"),
+).href;
+const APP_SENDER: AppSenderGuardOptions = {
+  packaged: PACKAGED,
+  appIndexUrl: APP_INDEX_URL,
+  devOrigin: DEV_ORIGIN,
+  caseInsensitivePath: process.platform === "win32",
+};
+
+/**
+ * Per-launch UI secret for local backend API calls.
+ */
+const NEXUS_UI_SECRET = randomBytes(32).toString("hex");
+
+registerFileHandlers(ipcMain, APP_SENDER);
+
+/**
+ * Injects the UI secret on requests to the local nexus or Vite proxy.
+ */
+function installUiSecretHeader(): void {
+  const filter = {
+    urls: [
+      "http://localhost:7472/*",
+      "http://127.0.0.1:7472/*",
+      "http://localhost:5173/*",
+      "http://127.0.0.1:5173/*",
+    ],
+  };
+  session.defaultSession.webRequest.onBeforeSendHeaders(filter, (details, callback) => {
+    const requestHeaders = { ...details.requestHeaders };
+    requestHeaders["X-UI-Secret"] = NEXUS_UI_SECRET;
+    callback({ requestHeaders });
+  });
+}
 
 let mainWindow: BrowserWindow | null = null;
 let backendProcess: ChildProcess | null = null;
@@ -34,7 +80,59 @@ let backendState: { status: string; backendUrl?: string; message?: string } = {
   status: "starting",
 };
 
-ipcMain.handle("get-backend-status", () => backendState);
+ipcMain.handle("get-backend-status", (event) => {
+  const bad = rejectNonAppSender(event, APP_SENDER);
+  if (bad) return bad;
+  return backendState;
+});
+
+/**
+ * Returns the encrypted admin token file path under userData.
+ */
+function authTokenPath(): string {
+  return path.join(app.getPath("userData"), "admin-token.bin");
+}
+
+ipcMain.handle("auth:save-token", (event, token: unknown) => {
+  const bad = rejectNonAppSender(event, APP_SENDER);
+  if (bad) return bad;
+  if (typeof token !== "string" || token.length === 0) {
+    return { ok: false as const, code: "INVALID_TOKEN" };
+  }
+  if (!safeStorage.isEncryptionAvailable()) {
+    return { ok: false as const, code: "ENCRYPTION_UNAVAILABLE" };
+  }
+  fs.writeFileSync(authTokenPath(), safeStorage.encryptString(token));
+  return { ok: true as const };
+});
+
+ipcMain.handle("auth:load-token", (event) => {
+  const bad = rejectNonAppSender(event, APP_SENDER);
+  if (bad) return bad;
+  const file = authTokenPath();
+  if (!fs.existsSync(file)) {
+    return { ok: true as const, data: null };
+  }
+  if (!safeStorage.isEncryptionAvailable()) {
+    return { ok: false as const, code: "ENCRYPTION_UNAVAILABLE" };
+  }
+  try {
+    const encrypted = fs.readFileSync(file);
+    return { ok: true as const, data: safeStorage.decryptString(encrypted) };
+  } catch {
+    return { ok: true as const, data: null };
+  }
+});
+
+ipcMain.handle("auth:clear-token", (event) => {
+  const bad = rejectNonAppSender(event, APP_SENDER);
+  if (bad) return bad;
+  const file = authTokenPath();
+  if (fs.existsSync(file)) {
+    fs.unlinkSync(file);
+  }
+  return { ok: true as const };
+});
 
 function readRuntimePort(resourcesDir: string, defaultPort: number): number {
   const runtimePath = path.join(resourcesDir, "nexus-runtime.json");
@@ -94,7 +192,9 @@ async function waitForBackend(
 ): Promise<boolean> {
   for (let i = 0; i < retries; i++) {
     try {
-      await fetch(url);
+      await fetch(url, {
+        headers: { "X-UI-Secret": NEXUS_UI_SECRET },
+      });
       return true;
     } catch {
       mainWindow?.webContents.send("backend-status", {
@@ -145,6 +245,10 @@ function startBackend() {
     {
       cwd: path.join(resourcesDir, "backend"),
       stdio: ["ignore", "pipe", "pipe"],
+      env: {
+        ...process.env,
+        NEXUS_UI_SECRET,
+      },
     },
   );
 
@@ -228,18 +332,27 @@ function createWindow() {
       preload: path.join(__dirname, "preload.js"),
       contextIsolation: true,
       nodeIntegration: false,
-      sandbox: false,
+      sandbox: true,
     },
   });
 
+  mainWindow.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
+  mainWindow.webContents.on("will-navigate", (event, url) => {
+    if (!isExactAppSenderUrl({ ...APP_SENDER, senderUrl: url })) {
+      event.preventDefault();
+    }
+  });
+
   if (process.env.NODE_ENV === "development") {
-    mainWindow.loadURL("http://localhost:5173");
+    mainWindow.loadURL(DEV_ORIGIN);
   } else {
     mainWindow.loadFile(path.join(__dirname, "../dist/index.html"));
   }
 }
 
 app.whenReady().then(async () => {
+  installUiSecretHeader();
+
   resourcesDir =
     process.env.NODE_ENV === "development"
       ? path.resolve(__dirname, "../../../../resources/nexus")
@@ -255,7 +368,7 @@ app.whenReady().then(async () => {
       ? path.resolve(__dirname, "../../../../resources/nexus")
       : path.join(app.getPath("appData"), "BeamLink", "Nexus");
 
-  const runtimeSubdirs = ["data/database", "data/uploads", "data/temp", "logs"];
+  const runtimeSubdirs = ["data/database", "data/uploads", "logs"];
   for (const dir of runtimeSubdirs) {
     fs.mkdirSync(path.join(runtimeDir, dir), { recursive: true });
   }
@@ -322,7 +435,9 @@ process.on("SIGTERM", () => {
   process.exit(0);
 });
 
-ipcMain.handle("select-files-and-directories", async () => {
+ipcMain.handle("select-files-and-directories", async (event) => {
+  const bad = rejectNonAppSender(event, APP_SENDER);
+  if (bad) return bad;
   const result = await dialog.showOpenDialog(mainWindow!, {
     properties: ["openFile", "openDirectory", "multiSelections"],
   });
@@ -335,17 +450,19 @@ ipcMain.handle(
     event,
     colors: { background?: unknown; foreground?: unknown },
   ) => {
+    const bad = rejectNonAppSender(event, APP_SENDER);
+    if (bad) return bad;
     if (
       typeof colors?.background !== "string" ||
       typeof colors?.foreground !== "string" ||
       !isHexColor(colors.background) ||
       !isHexColor(colors.foreground)
     ) {
-      return;
+      return { ok: false, code: "INVALID_THEME" };
     }
     const win = BrowserWindow.fromWebContents(event.sender);
     if (!win) {
-      return;
+      return { ok: false, code: "INVALID_SENDER" };
     }
     const next = {
       background: colors.background,
@@ -366,3 +483,16 @@ ipcMain.handle(
     saveWindowTheme(windowThemePath(), next);
   },
 );
+
+ipcMain.handle("window:show", async (event) => {
+  const bad = rejectNonAppSender(event, APP_SENDER);
+  if (bad) return bad;
+  const win = BrowserWindow.fromWebContents(event.sender) ?? mainWindow;
+  if (!win) {
+    return { ok: false, code: "INVALID_SENDER" };
+  }
+  win.show();
+  win.focus();
+  if (process.platform === "darwin") app.dock?.show();
+  return { ok: true };
+});
