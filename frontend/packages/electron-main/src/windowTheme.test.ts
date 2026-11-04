@@ -6,7 +6,7 @@ import {
   isHexColor,
   readSavedWindowTheme,
   saveWindowTheme,
-} from "./index.ts";
+} from "./windowTheme.ts";
 
 const fallback = { background: "#121212", foreground: "#f5f5f5" };
 
