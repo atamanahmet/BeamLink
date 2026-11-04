@@ -1,26 +1,21 @@
 import { useEffect, useRef } from "react";
 import { apiClient } from "../api/client";
-import { useAuthStore, type AuthUser } from "../store/authStore";
-import type { AgentStatus } from "../api/agentApi";
+import type { DeviceStatus } from "../api/deviceApi";
 
 type SseHandler = (data: unknown) => void;
 
 /**
- * Peer SSE for identity and agent status. Not transfer progress.
+ * Peer SSE for identity and device status. Not transfer progress.
  */
-export function usePeerSse(onAgentStatus?: (data: AgentStatus) => void) {
-  const status = useAuthStore((s) => s.status);
-  const setUser = useAuthStore((s) => s.setUser);
+export function usePeerSse(onDeviceStatus?: (data: DeviceStatus) => void) {
   const handlersRef = useRef<Map<string, Set<SseHandler>>>(new Map());
-  const onAgentStatusRef = useRef(onAgentStatus);
+  const onDeviceStatusRef = useRef(onDeviceStatus);
 
   useEffect(() => {
-    onAgentStatusRef.current = onAgentStatus;
+    onDeviceStatusRef.current = onDeviceStatus;
   });
 
   useEffect(() => {
-    if (status !== "authenticated") return;
-
     const onSseEvent = (eventName: string, handler: SseHandler) => {
       if (!handlersRef.current.has(eventName)) {
         handlersRef.current.set(eventName, new Set());
@@ -29,12 +24,12 @@ export function usePeerSse(onAgentStatus?: (data: AgentStatus) => void) {
       return () => void handlersRef.current.get(eventName)?.delete(handler);
     };
 
-    const unsubIdentity = onSseEvent("identity_updated", (data) => {
-      setUser(data as AuthUser);
+    const unsubStatus = onSseEvent("device_status_updated", (data) => {
+      onDeviceStatusRef.current?.(data as DeviceStatus);
     });
 
-    const unsubStatus = onSseEvent("agent_status_updated", (data) => {
-      onAgentStatusRef.current?.(data as AgentStatus);
+    const unsubIdentity = onSseEvent("identity_updated", () => {
+      // Status refresh is handled by the parent after identity changes.
     });
 
     const es = new EventSource(`${apiClient.defaults.baseURL}/events`);
@@ -44,7 +39,7 @@ export function usePeerSse(onAgentStatus?: (data: AgentStatus) => void) {
       handlersRef.current.get(event)?.forEach((fn) => fn(data));
     };
 
-    ["identity_updated", "agent_status_updated"].forEach((eventName) => {
+    ["identity_updated", "device_status_updated"].forEach((eventName) => {
       es.addEventListener(eventName, (e) => {
         const data = JSON.parse((e as MessageEvent).data);
         handlersRef.current.get(eventName)?.forEach((fn) => fn(data));
@@ -58,5 +53,5 @@ export function usePeerSse(onAgentStatus?: (data: AgentStatus) => void) {
       unsubStatus();
       es.close();
     };
-  }, [status, setUser]);
+  }, []);
 }

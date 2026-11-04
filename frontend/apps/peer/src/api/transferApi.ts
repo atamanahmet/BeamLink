@@ -1,7 +1,7 @@
 import type {
-  DispatchResultItem,
   HealthApi,
   InitiateDispatchRequest,
+  InitiateDispatchResponse,
   PeerSummary,
   PeersApi,
   TransferApi,
@@ -37,7 +37,8 @@ export const transferApi: TransferApi = {
   },
 
   initiateDispatch: async (req: InitiateDispatchRequest) =>
-    (await apiClient.post<DispatchResultItem[]>("/transfers/send", req)).data,
+    (await apiClient.post<InitiateDispatchResponse>("/transfers/send", req))
+      .data,
 
   pauseTransfer: async (id, type) => {
     await apiClient.post(`/transfers/${typePath(type)}/${id}/pause`);
@@ -75,7 +76,7 @@ export const peersApi: PeersApi = {
     const raw = res.data.peers ?? res.data;
     return (raw as Array<Record<string, unknown>>).map((p) => ({
       id: String(p.id),
-      agentName: String(p.agentName ?? ""),
+      deviceName: String(p.deviceName ?? ""),
       ipAddress: String(p.ipAddress ?? ""),
       port: Number(p.port ?? 0),
       online: Boolean(p.online),

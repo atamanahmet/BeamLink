@@ -8,35 +8,46 @@ import {
   TextInput,
   Title,
 } from "@mantine/core";
-import { requestRename } from "../api/agentApi";
-import { useAgentStatusStore } from "../store/agentStatusStore";
+import { DEVICE_KEY_LABEL, problemFromUnknown } from "@beamlink/core";
+import { ConnectBanner, ErrorWithRef, useConnectOpen } from "@beamlink/features";
+import { requestRename } from "../api/deviceApi";
+import { useDeviceStatusStore } from "../store/deviceStatusStore";
 
-export const AgentInfo = () => {
-  const agentStatus = useAgentStatusStore((s) => s.agentStatus);
+export const DeviceInfo = () => {
+  const deviceStatus = useDeviceStatusStore((s) => s.deviceStatus);
+  const openConnect = useConnectOpen();
 
   const [editing, setEditing] = useState(false);
   const [newName, setNewName] = useState("");
   const [requestMessage, setRequestMessage] = useState("");
+  const [renameError, setRenameError] = useState("");
+  const [renameCorrelationId, setRenameCorrelationId] = useState<string | null>(
+    null,
+  );
   const [loading, setLoading] = useState(false);
 
   /**
-   * Asks the nexus to rename this agent, then exits edit mode.
+   * Asks the nexus to rename this device, then exits edit mode.
    */
   const handleConfirm = async () => {
     if (!newName.trim()) return;
     try {
       setLoading(true);
-      await requestRename(agentStatus!.agentId!, newName);
+      setRenameError("");
+      setRenameCorrelationId(null);
+      await requestRename(deviceStatus!.deviceId!, newName);
       setRequestMessage("Name change requested for: " + newName);
       setEditing(false);
-    } catch (error) {
-      console.error("Rename failed", error);
+    } catch (err: unknown) {
+      const problem = problemFromUnknown(err);
+      setRenameError(problem.detail ?? "Rename failed.");
+      setRenameCorrelationId(problem.correlationId);
     } finally {
       setLoading(false);
     }
   };
 
-  if (!agentStatus) {
+  if (!deviceStatus) {
     return (
       <Paper
         withBorder
@@ -69,25 +80,26 @@ export const AgentInfo = () => {
       }}
     >
       <Title order={2} c="var(--bl-text-primary)" mb="md">
-        Agent Information
+        Device Information
       </Title>
 
       <Stack gap="md">
+        <ConnectBanner state={deviceStatus.state} onOpen={openConnect} />
         <div>
           <Text size="sm" c="var(--bl-primary-text)" mb={4}>
-            Agent Name
+            Device Name
           </Text>
           {!editing ? (
             <Group gap="md">
               <Text size="lg" c="var(--bl-text-primary)">
-                {agentStatus.name}
+                {deviceStatus.name}
               </Text>
               <Button
                 variant="subtle"
                 color="brand"
                 size="compact-sm"
                 onClick={() => {
-                  setNewName(agentStatus.name);
+                  setNewName(deviceStatus.name);
                   setEditing(true);
                 }}
               >
@@ -117,14 +129,20 @@ export const AgentInfo = () => {
               </Button>
             </Group>
           )}
+          {renameError ? (
+            <ErrorWithRef
+              message={renameError}
+              correlationId={renameCorrelationId}
+            />
+          ) : null}
         </div>
 
         <div>
           <Text size="sm" c="var(--bl-primary-text)" mb={4}>
-            Agent ID
+            Device ID
           </Text>
           <Text size="sm" ff="monospace" c="var(--bl-text-secondary)">
-            {agentStatus.agentId ?? "Unregistered"}
+            {deviceStatus.deviceId ?? "Unregistered"}
           </Text>
         </div>
 
@@ -133,7 +151,7 @@ export const AgentInfo = () => {
             Upload Directory
           </Text>
           <Text size="lg" c="var(--bl-text-primary)">
-            {agentStatus.uploadDirectory}
+            {deviceStatus.uploadDirectory}
           </Text>
         </div>
 
@@ -142,7 +160,16 @@ export const AgentInfo = () => {
             Nexus
           </Text>
           <Text size="lg" c="var(--bl-text-primary)">
-            {agentStatus.nexusUrl}
+            {deviceStatus.nexusUrl}
+          </Text>
+        </div>
+
+        <div>
+          <Text size="sm" c="var(--bl-primary-text)" mb={4}>
+            {DEVICE_KEY_LABEL}
+          </Text>
+          <Text size="sm" ff="monospace" c="var(--bl-text-secondary)">
+            {deviceStatus.fingerprint ?? ""}
           </Text>
         </div>
 
@@ -151,7 +178,7 @@ export const AgentInfo = () => {
             Status
           </Text>
           <Text size="lg" c="var(--bl-success-text)">
-            {agentStatus.status}
+            {deviceStatus.status}
           </Text>
         </div>
       </Stack>

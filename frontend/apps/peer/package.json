@@ -1,5 +1,5 @@
 {
-  "name": "agent",
+  "name": "peer",
   "private": true,
   "version": "0.0.0",
   "main": "dist-electron/main.js",
@@ -45,8 +45,8 @@
     "wait-on": "^9.0.5"
   },
   "build": {
-    "appId": "com.beamlink.agent",
-    "productName": "Beamlink Agent",
+    "appId": "com.beamlink.peer",
+    "productName": "Beamlink Peer",
     "directories": {
       "buildResources": "assets"
     },
@@ -69,11 +69,11 @@
         "to": "jre"
       },
       {
-        "from": "../../../resources/agent/config",
+        "from": "../../../resources/peer/config",
         "to": "config"
       },
       {
-        "from": "../../../resources/agent/backend",
+        "from": "../../../resources/peer/backend",
         "to": "backend"
       }
     ],

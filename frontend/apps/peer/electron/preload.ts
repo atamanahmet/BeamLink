@@ -1,7 +1,17 @@
 import { contextBridge, ipcRenderer, webUtils } from "electron";
-import path from "path";
-import fs from "fs";
-import os from "os";
+
+type FsResult<T> = { ok: true; data: T } | { ok: false; code: string };
+
+/**
+ * Unwraps an fs IPC result or throws the error code.
+ */
+async function unwrapFs<T>(resultPromise: Promise<FsResult<T>>): Promise<T> {
+  const result = await resultPromise;
+  if (!result.ok) {
+    throw new Error(result.code);
+  }
+  return result.data;
+}
 
 contextBridge.exposeInMainWorld("electronAPI", {
   selectFilesAndDirectories: () =>
@@ -11,105 +21,25 @@ contextBridge.exposeInMainWorld("electronAPI", {
     return files.map((f) => webUtils.getPathForFile(f)).filter(Boolean);
   },
 
-  /**
-   * Returns available drive roots.
-   * Windows: scans A-Z for accessible drives.
-   * Unix: returns single root "/".
-   */
-  getRoots: (): {
-    name: string;
-    fullPath: string;
-    isDirectory: true;
-    locked: boolean;
-    hidden: boolean;
-  }[] => {
-    if (process.platform === "win32") {
-      return "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
-        .split("")
-        .filter((letter) => {
-          try {
-            fs.accessSync(`${letter}:\\`);
-            return true;
-          } catch {
-            return false;
-          }
-        })
-        .map((letter) => ({
-          name: `${letter}:`,
-          fullPath: `${letter}:\\`,
-          isDirectory: true as const,
-          locked: false,
-          hidden: false,
-        }));
+  getRoots: () => unwrapFs(ipcRenderer.invoke("fs:get-roots")),
+
+  getHomedir: () => unwrapFs(ipcRenderer.invoke("fs:get-homedir")),
+
+  getSep: (): string => (process.platform === "win32" ? "\\" : "/"),
+
+  readDir: (dirPath: string) =>
+    unwrapFs(ipcRenderer.invoke("fs:read-dir", dirPath)),
+
+  mkdir: async (dirPath: string): Promise<void> => {
+    await unwrapFs(ipcRenderer.invoke("fs:mkdir", dirPath));
+  },
+
+  exists: async (dirPath: string): Promise<boolean> => {
+    try {
+      return await unwrapFs(ipcRenderer.invoke("fs:exists", dirPath));
+    } catch {
+      return false;
     }
-    return [
-      {
-        name: "/",
-        fullPath: "/",
-        isDirectory: true as const,
-        locked: false,
-        hidden: false,
-      },
-    ];
-  },
-
-  getHomedir: (): string => os.homedir(),
-  getSep: (): string => path.sep,
-
-  /**
-   * Reads all directory entries including hidden and locked.
-   * hidden: dot-prefix detection only (cross-platform safe).
-   * TODO: Windows FILE_ATTRIBUTE_HIDDEN bit detection via native addon.
-   */
-  readDir: (
-    dirPath: string,
-  ): {
-    name: string;
-    fullPath: string;
-    isDirectory: boolean;
-    size?: number;
-    locked: boolean;
-    hidden: boolean;
-  }[] => {
-    const raw = fs.readdirSync(dirPath, { withFileTypes: true });
-
-    return raw.map((entry) => {
-      const fullPath = path.join(dirPath, entry.name);
-      const isDirectory = entry.isDirectory();
-      const hidden = entry.name.startsWith(".");
-
-      let locked = false;
-      try {
-        fs.accessSync(fullPath, fs.constants.R_OK);
-      } catch {
-        locked = true;
-      }
-
-      let size: number | undefined;
-      if (!isDirectory && !locked) {
-        try {
-          size = fs.statSync(fullPath).size;
-        } catch {
-          locked = true;
-        }
-      }
-
-      return { name: entry.name, fullPath, isDirectory, size, locked, hidden };
-    });
-  },
-
-  /**
-   * Creates a directory. Returns the created path or throws with reason.
-   */
-  mkdir: (dirPath: string): void => {
-    fs.mkdirSync(dirPath, { recursive: false });
-  },
-
-  /**
-   * Checks if a path exists (used for new folder name collision detection).
-   */
-  exists: (dirPath: string): boolean => {
-    return fs.existsSync(dirPath);
   },
 
   onBackendStatus: (
@@ -132,4 +62,6 @@ contextBridge.exposeInMainWorld("electronAPI", {
 
   setWindowTheme: (colors: { background: string; foreground: string }) =>
     ipcRenderer.invoke("window:set-theme", colors),
+
+  showWindow: () => ipcRenderer.invoke("window:show"),
 });

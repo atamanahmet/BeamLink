@@ -69,7 +69,7 @@ export default function StartupScreen({ onReady }: Props) {
           style={{ width: 72, height: 72, borderRadius: 16 }}
         />
         <Title order={3} c="var(--bl-primary-text)">
-          BeamLink Agent
+          BeamLink Device
         </Title>
         {status === "starting" ? <Loader color="brand" type="dots" /> : null}
         <Text size="sm" c={statusColor}>

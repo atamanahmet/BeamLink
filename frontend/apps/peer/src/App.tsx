@@ -6,30 +6,29 @@ import { usePlatform } from "@beamlink/platform";
 import icon from "../assets/icon.png";
 import StartupScreen from "./components/StartupScreen";
 import { setApiBaseUrl } from "./api/client";
-import { getAgentStatus } from "./api/agentApi";
+import { getDeviceStatus } from "./api/deviceApi";
 import { usePeerSse } from "./hooks/usePeerSse";
 import { queryClient } from "./queryClient";
-import { useAuthStore } from "./store/authStore";
-import { useAgentStatusStore } from "./store/agentStatusStore";
+import { useDeviceStatusStore } from "./store/deviceStatusStore";
 
 /**
- * Loads agent status and keeps SSE alive while logged in.
+ * Loads device status and keeps SSE alive while the shell is ready.
  */
 function PeerSessionEffects() {
-  const status = useAuthStore((s) => s.status);
-  const setAgentStatus = useAgentStatusStore((s) => s.setAgentStatus);
+  const setDeviceStatus = useDeviceStatusStore((s) => s.setDeviceStatus);
 
-  usePeerSse(setAgentStatus);
+  usePeerSse(setDeviceStatus);
 
   useEffect(() => {
-    if (status !== "authenticated") {
-      setAgentStatus(null);
-      return;
-    }
-    void getAgentStatus()
-      .then(setAgentStatus)
-      .catch(() => setAgentStatus(null));
-  }, [status, setAgentStatus]);
+    const refresh = () => {
+      void getDeviceStatus()
+        .then(setDeviceStatus)
+        .catch(() => setDeviceStatus(null));
+    };
+    refresh();
+    const timer = window.setInterval(refresh, 30_000);
+    return () => window.clearInterval(timer);
+  }, [setDeviceStatus]);
 
   return null;
 }
@@ -102,7 +101,7 @@ function App() {
             c="var(--bl-primary-text)"
             style={{ userSelect: "none" }}
           >
-            BeamLink Agent
+            BeamLink Device
           </Text>
         </div>
         <Outlet />

@@ -6,20 +6,65 @@ import {
   Tray,
   Menu,
   nativeImage,
+  session,
 } from "electron";
 import {
+  isExactAppSenderUrl,
   isHexColor,
   readSavedWindowTheme,
+  registerFileHandlers,
+  rejectNonAppSender,
   saveWindowTheme,
+  type AppSenderGuardOptions,
 } from "@beamlink/electron-main";
 import { spawn, ChildProcess } from "child_process";
+import { randomBytes } from "crypto";
 import path from "path";
 import fs from "fs";
+import { pathToFileURL } from "url";
 
 const DEFAULT_WINDOW_THEME = {
   background: "#121212",
   foreground: "#f5f5f5",
 };
+
+const PACKAGED = process.env.NODE_ENV !== "development";
+const DEV_ORIGIN = "http://localhost:5174";
+const APP_INDEX_URL = pathToFileURL(
+  path.join(__dirname, "../dist/index.html"),
+).href;
+const APP_SENDER: AppSenderGuardOptions = {
+  packaged: PACKAGED,
+  appIndexUrl: APP_INDEX_URL,
+  devOrigin: DEV_ORIGIN,
+  caseInsensitivePath: process.platform === "win32",
+};
+
+/**
+ * Per-launch UI secret for local backend API calls.
+ */
+const DEVICE_UI_SECRET = randomBytes(32).toString("hex");
+
+registerFileHandlers(ipcMain, APP_SENDER);
+
+/**
+ * Injects the UI secret on requests to the local device or Vite proxy.
+ */
+function installUiSecretHeader(): void {
+  const filter = {
+    urls: [
+      "http://localhost:9090/*",
+      "http://127.0.0.1:9090/*",
+      "http://localhost:5174/*",
+      "http://127.0.0.1:5174/*",
+    ],
+  };
+  session.defaultSession.webRequest.onBeforeSendHeaders(filter, (details, callback) => {
+    const requestHeaders = { ...details.requestHeaders };
+    requestHeaders["X-UI-Secret"] = DEVICE_UI_SECRET;
+    callback({ requestHeaders });
+  });
+}
 
 let mainWindow: BrowserWindow | null = null;
 let backendProcess: ChildProcess | null = null;
@@ -34,19 +79,23 @@ let backendState: { status: string; backendUrl?: string; message?: string } = {
   status: "starting",
 };
 
-ipcMain.handle("get-backend-status", () => backendState);
+ipcMain.handle("get-backend-status", (event) => {
+  const bad = rejectNonAppSender(event, APP_SENDER);
+  if (bad) return bad;
+  return backendState;
+});
 
 function readRuntimePort(resourcesDir: string, defaultPort: number): number {
-  const runtimePath = path.join(resourcesDir, "agent-runtime.json");
+  const runtimePath = path.join(resourcesDir, "peer-runtime.json");
   try {
     const raw = fs.readFileSync(runtimePath, "utf-8");
     const parsed = JSON.parse(raw);
     const port = parseInt(parsed.port, 10);
-    console.log(`[backend] port from agent-runtime.json: ${port}`);
+    console.log(`[backend] port from peer-runtime.json: ${port}`);
     return port;
   } catch {
     console.log(
-      `[backend] agent-runtime.json not found, using default port: ${defaultPort}`,
+      `[backend] peer-runtime.json not found, using default port: ${defaultPort}`,
     );
     return defaultPort;
   }
@@ -58,7 +107,7 @@ async function waitForRuntimeJson(
   retries = 30,
   intervalMs = 500,
 ): Promise<number> {
-  const runtimePath = path.join(resourcesDir, "agent-runtime.json");
+  const runtimePath = path.join(resourcesDir, "peer-runtime.json");
   for (let i = 0; i < retries; i++) {
     if (fs.existsSync(runtimePath)) {
       return readRuntimePort(resourcesDir, defaultPort);
@@ -66,7 +115,7 @@ async function waitForRuntimeJson(
     await new Promise((res) => setTimeout(res, intervalMs));
   }
   console.log(
-    `[backend] agent-runtime.json never appeared, using default: ${defaultPort}`,
+    `[backend] peer-runtime.json never appeared, using default: ${defaultPort}`,
   );
   return defaultPort;
 }
@@ -94,7 +143,9 @@ async function waitForBackend(
 ): Promise<boolean> {
   for (let i = 0; i < retries; i++) {
     try {
-      await fetch(url);
+      await fetch(url, {
+        headers: { "X-UI-Secret": DEVICE_UI_SECRET },
+      });
       return true;
     } catch {
       mainWindow?.webContents.send("backend-status", {
@@ -119,7 +170,7 @@ function startBackend() {
   const javaBinary = process.platform === "win32" ? "java.exe" : "java";
 
   const javaPath = path.join(jreDir, "bin", javaBinary);
-  const jarPath = path.join(resourcesDir, "backend", "beamlink-agent.jar");
+  const jarPath = path.join(resourcesDir, "backend", "beamlink-peer.jar");
 
   if (!fs.existsSync(javaPath)) {
     console.error("[backend] Java not found at:", javaPath);
@@ -145,6 +196,10 @@ function startBackend() {
     {
       cwd: path.join(resourcesDir, "backend"),
       stdio: ["ignore", "pipe", "pipe"],
+      env: {
+        ...process.env,
+        PEER_UI_SECRET: DEVICE_UI_SECRET,
+      },
     },
   );
 
@@ -168,7 +223,7 @@ function startBackend() {
 function createTray() {
   const icon = nativeImage.createFromPath(getIconPath());
   tray = new Tray(icon);
-  tray.setToolTip("BeamLink Agent");
+  tray.setToolTip("BeamLink Peer");
   tray.setContextMenu(
     Menu.buildFromTemplate([
       {
@@ -228,12 +283,19 @@ function createWindow() {
       preload: path.join(__dirname, "preload.js"),
       contextIsolation: true,
       nodeIntegration: false,
-      sandbox: false,
+      sandbox: true,
     },
   });
 
+  mainWindow.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
+  mainWindow.webContents.on("will-navigate", (event, url) => {
+    if (!isExactAppSenderUrl({ ...APP_SENDER, senderUrl: url })) {
+      event.preventDefault();
+    }
+  });
+
   if (process.env.NODE_ENV === "development") {
-    mainWindow.loadURL("http://localhost:5174");
+    mainWindow.loadURL(DEV_ORIGIN);
   } else {
     mainWindow.loadFile(path.join(__dirname, "../dist/index.html"));
   }
@@ -246,10 +308,29 @@ function createWindow() {
   });
 }
 
+if (!app.requestSingleInstanceLock()) {
+  app.quit();
+} else {
+  app.on("second-instance", () => {
+    if (!mainWindow) {
+      return;
+    }
+    if (mainWindow.isMinimized()) {
+      mainWindow.restore();
+    }
+    mainWindow.show();
+    mainWindow.focus();
+    if (process.platform === "darwin") {
+      app.dock?.show();
+    }
+  });
+
 app.whenReady().then(async () => {
+  installUiSecretHeader();
+
   resourcesDir =
     process.env.NODE_ENV === "development"
-      ? path.resolve(__dirname, "../../../../resources/agent")
+      ? path.resolve(__dirname, "../../../../resources/peer")
       : process.resourcesPath;
 
   jreDir =
@@ -259,10 +340,10 @@ app.whenReady().then(async () => {
 
   runtimeDir =
     process.env.NODE_ENV === "development"
-      ? path.resolve(__dirname, "../../../../resources/agent")
-      : path.join(app.getPath("appData"), "BeamLink", "Agent");
+      ? path.resolve(__dirname, "../../../../resources/peer")
+      : path.join(app.getPath("appData"), "BeamLink", "Peer");
 
-  const runtimeSubdirs = ["data/database", "data/uploads", "data/temp", "logs"];
+  const runtimeSubdirs = ["data/database", "data/uploads", "logs"];
   for (const dir of runtimeSubdirs) {
     fs.mkdirSync(path.join(runtimeDir, dir), { recursive: true });
   }
@@ -295,6 +376,7 @@ app.whenReady().then(async () => {
 
   mainWindow?.webContents.send("backend-status", backendState);
 });
+}
 
 app.on("window-all-closed", () => {
   // tray keeps the app alive
@@ -321,35 +403,45 @@ process.on("SIGTERM", () => {
   process.exit(0);
 });
 
-ipcMain.handle("select-file", async () => {
+ipcMain.handle("select-file", async (event) => {
+  const bad = rejectNonAppSender(event, APP_SENDER);
+  if (bad) return bad;
   const result = await dialog.showOpenDialog(mainWindow!, {
     properties: ["openFile"],
   });
   return result.filePaths[0] ?? null;
 });
 
-ipcMain.handle("select-directory", async () => {
+ipcMain.handle("select-directory", async (event) => {
+  const bad = rejectNonAppSender(event, APP_SENDER);
+  if (bad) return bad;
   const result = await dialog.showOpenDialog(mainWindow!, {
     properties: ["openDirectory"],
   });
   return result.filePaths[0] ?? null;
 });
 
-ipcMain.handle("select-files", async () => {
+ipcMain.handle("select-files", async (event) => {
+  const bad = rejectNonAppSender(event, APP_SENDER);
+  if (bad) return bad;
   const result = await dialog.showOpenDialog(mainWindow!, {
     properties: ["openFile", "multiSelections"],
   });
   return result.filePaths;
 });
 
-ipcMain.handle("select-directories", async () => {
+ipcMain.handle("select-directories", async (event) => {
+  const bad = rejectNonAppSender(event, APP_SENDER);
+  if (bad) return bad;
   const result = await dialog.showOpenDialog(mainWindow!, {
     properties: ["openDirectory", "multiSelections"],
   });
   return result.filePaths;
 });
 
-ipcMain.handle("select-files-and-directories", async () => {
+ipcMain.handle("select-files-and-directories", async (event) => {
+  const bad = rejectNonAppSender(event, APP_SENDER);
+  if (bad) return bad;
   const result = await dialog.showOpenDialog(mainWindow!, {
     properties: ["openFile", "openDirectory", "multiSelections"],
   });
@@ -362,17 +454,19 @@ ipcMain.handle(
     event,
     colors: { background?: unknown; foreground?: unknown },
   ) => {
+    const bad = rejectNonAppSender(event, APP_SENDER);
+    if (bad) return bad;
     if (
       typeof colors?.background !== "string" ||
       typeof colors?.foreground !== "string" ||
       !isHexColor(colors.background) ||
       !isHexColor(colors.foreground)
     ) {
-      return;
+      return { ok: false, code: "INVALID_THEME" };
     }
     const win = BrowserWindow.fromWebContents(event.sender);
     if (!win) {
-      return;
+      return { ok: false, code: "INVALID_SENDER" };
     }
     const next = {
       background: colors.background,
@@ -393,3 +487,16 @@ ipcMain.handle(
     saveWindowTheme(windowThemePath(), next);
   },
 );
+
+ipcMain.handle("window:show", async (event) => {
+  const bad = rejectNonAppSender(event, APP_SENDER);
+  if (bad) return bad;
+  const win = BrowserWindow.fromWebContents(event.sender) ?? mainWindow;
+  if (!win) {
+    return { ok: false, code: "INVALID_SENDER" };
+  }
+  win.show();
+  win.focus();
+  if (process.platform === "darwin") app.dock?.show();
+  return { ok: true };
+});

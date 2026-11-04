@@ -1,0 +1,17 @@
+try {
+  var scheme = window.localStorage.getItem("mantine-color-scheme-value");
+  var resolved =
+    scheme === "light" || scheme === "dark"
+      ? scheme
+      : window.matchMedia("(prefers-color-scheme: dark)").matches
+        ? "dark"
+        : "light";
+  document.documentElement.setAttribute("data-mantine-color-scheme", resolved);
+  var bgRaw = window.localStorage.getItem("beamlink-theme-bg");
+  var bg = bgRaw ? JSON.parse(bgRaw) : null;
+  var color = bg && typeof bg[resolved] === "string" ? bg[resolved] : null;
+  if (typeof color === "string" && /^#[0-9a-fA-F]{6}$/.test(color)) {
+    document.documentElement.style.backgroundColor = color;
+    document.documentElement.setAttribute("data-bg-applied", color);
+  }
+} catch (e) {}

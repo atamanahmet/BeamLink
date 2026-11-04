@@ -1,4 +1,5 @@
-import type { SettingsApi } from "@beamlink/core";
+import type { DeviceReRegisterResult, SettingsApi } from "@beamlink/core";
+import type { NexusTlsPinAdapter } from "@beamlink/features";
 import { apiClient } from "./client";
 
 /**
@@ -35,6 +36,13 @@ export const settingsApi: SettingsApi = {
 
   putResumePolicy: async () => {},
 
+  getMinFreeSpace: async () =>
+    (await apiClient.get<{ value: number }>("/settings/min-free-space")).data,
+
+  putMinFreeSpace: async (value) => {
+    await apiClient.put("/settings/min-free-space", { value });
+  },
+
   openUploadsFolder: async () => {
     await apiClient.post("/storage/open-uploads-folder");
   },
@@ -43,7 +51,41 @@ export const settingsApi: SettingsApi = {
     await apiClient.post("/storage/open-logs");
   },
 
-  changeCredentials: async (req) => {
-    await apiClient.post("/auth/change-credentials", req);
+  changeCredentials: async () => {
+    throw new Error("Credentials are not used on the peer app");
+  },
+
+  reRegister: async (force) =>
+    (
+      await apiClient.post<DeviceReRegisterResult>("/reset/re-register", null, {
+        params: { force: force === true },
+      })
+    ).data,
+
+  factoryReset: async (force) => {
+    await apiClient.post("/reset/factory", null, {
+      params: { force: force === true },
+    });
+  },
+};
+
+/**
+ * Peer adapter for nexus TLS first contact. HTTP only here.
+ */
+export const nexusTlsPinAdapter: NexusTlsPinAdapter = {
+  getStatus: async () =>
+    (await apiClient.get("/nexus/status")).data,
+
+  probe: async (ip, port) =>
+    (await apiClient.post("/nexus/probe", { ip, port })).data,
+
+  confirm: async (ip, port, fingerprint) => {
+    await apiClient.post("/nexus/confirm", { ip, port, fingerprint });
+  },
+
+  cancel: async () => {},
+
+  clearPin: async () => {
+    await apiClient.delete("/nexus/pin");
   },
 };
