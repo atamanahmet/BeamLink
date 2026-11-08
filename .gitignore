@@ -13,18 +13,19 @@ target/
 /data/
 /logs/
 /config/
-/beamlink-agent/logs/
-/beamlink-agent/data/
+/beamlink-peer/logs/
+/beamlink-peer/data/
 /nexus.log
 /agent-info.json
 
 # ── Resources - populated by make build, never committed ──────────
-resources/
+# Root-only: do not ignore **/src/main/resources (Flyway, yaml).
+/resources/
 
 # ── Frontend ──────────────────────────────────────────────────────
 node_modules/
 dist/
-beamlink-agent-dist/
+beamlink-peer-dist/
 
 # ── Secrets ───────────────────────────────────────────────────────
 .env
