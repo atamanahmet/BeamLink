@@ -57,7 +57,8 @@ class EnrollmentClient(
             AddressGuard.requireAllowedNexusUrl(nexusUrl)
             val ip = WifiIpv4.resolve()
             AddressGuard.requireAllowedHost(ip)
-            val name = "Android-$ip:${DeviceDefaults.DEVICE_PORT}"
+            val name =
+                "Android-${android.os.Build.MODEL}-${deviceKey.fingerprint().take(4)}"
             phoneTlsCert.loadOrCreate()
             val publicKey = deviceKey.publicKeyBase64()
             val tlsFingerprint = phoneTlsCert.fingerprint()

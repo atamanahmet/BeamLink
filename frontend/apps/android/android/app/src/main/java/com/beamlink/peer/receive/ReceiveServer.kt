@@ -11,6 +11,7 @@ import com.beamlink.peer.exception.InvalidRequestException
 import com.beamlink.peer.exception.ProblemStatusMapper
 import com.beamlink.peer.net.AddressGuard
 import com.beamlink.peer.security.PhoneTlsCert
+import com.beamlink.peer.security.PhoneTlsKeyManager
 import com.beamlink.peer.security.TokenStore
 import com.beamlink.peer.send.TransferForegroundService
 import io.ktor.http.ContentType
@@ -52,7 +53,6 @@ import java.security.interfaces.RSAPublicKey
 import java.security.spec.X509EncodedKeySpec
 import java.util.Base64
 import java.util.UUID
-import javax.net.ssl.KeyManagerFactory
 
 /**
  * Ktor Netty TLS receive server on the device port.
@@ -71,9 +71,7 @@ class ReceiveServer(
     fun start() {
         if (engine != null) return
         phoneTlsCert.loadOrCreate()
-        val kmf = KeyManagerFactory.getInstance(KeyManagerFactory.getDefaultAlgorithm())
-        kmf.init(phoneTlsCert.keyStore(), null)
-        val sslContext = SslContextBuilder.forServer(kmf).build()
+        val sslContext = SslContextBuilder.forServer(PhoneTlsKeyManager(phoneTlsCert)).build()
         val server = embeddedServer(Netty, configure = {
             connector {
                 host = "0.0.0.0"
@@ -82,7 +80,17 @@ class ReceiveServer(
             channelPipelineConfig = {
                 val sslEngine = sslContext.newEngine(channel().alloc())
                 sslEngine.useClientMode = false
-                addFirst("ssl", SslHandler(sslEngine))
+                val sslHandler = SslHandler(sslEngine)
+                sslHandler.handshakeFuture().addListener { future ->
+                    if (!future.isSuccess) {
+                        Log.w(
+                            "ReceiveServer",
+                            "TLS handshake failed from ${channel().remoteAddress()}",
+                            future.cause(),
+                        )
+                    }
+                }
+                addFirst("ssl", sslHandler)
             }
         }) {
             intercept(ApplicationCallPipeline.Setup) {
