@@ -107,6 +107,11 @@ export type DeviceReRegisterResult = {
   message: string;
 };
 
+export type LanAddressesResponse = {
+  addresses: string[];
+  tlsPort: number;
+};
+
 /**
  * Settings screen storage, speed cap, credentials and logs.
  */
@@ -121,6 +126,7 @@ export interface SettingsApi {
   putResumePolicy: (value: ResumePolicyMode) => Promise<void>;
   getMinFreeSpace: () => Promise<{ value: number }>;
   putMinFreeSpace: (value: number) => Promise<void>;
+  getLanAddresses?: () => Promise<LanAddressesResponse>;
   openUploadsFolder: () => Promise<void>;
   openLogs: () => Promise<void>;
   changeCredentials: (req: ChangeCredentialsRequest) => Promise<void>;

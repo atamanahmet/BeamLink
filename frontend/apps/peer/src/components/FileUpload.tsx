@@ -86,7 +86,7 @@ export const FileUpload = ({ onTransferStarted }: FileUploadProps) => {
         paths: validPaths,
         targetDeviceId: peer.id,
         targetIp: peer.ipAddress,
-        targetPort: peer.port,
+        targetPort: peer.tlsPort ?? peer.port,
       });
       const notice = dispatchNotice(results.items.length, results.skippedCount);
       if (notice) {
@@ -150,6 +150,7 @@ export const FileUpload = ({ onTransferStarted }: FileUploadProps) => {
     deviceName: p.deviceName,
     ipAddress: p.ipAddress,
     port: p.port,
+    tlsPort: p.tlsPort,
     online: p.online,
   }));
 

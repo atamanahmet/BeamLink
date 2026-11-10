@@ -16,7 +16,11 @@ import {
   NEXUS_CERTIFICATE_LABEL,
   problemFromUnknown,
 } from "@beamlink/core";
-import { FingerprintText, formatDate } from "@beamlink/features";
+import {
+  FingerprintText,
+  formatDate,
+  formatDeviceAddress,
+} from "@beamlink/features";
 import {
   useNexusAdminMutations,
   useNexusDevicesQuery,
@@ -113,7 +117,7 @@ export const DeviceList = () => {
 
               <Stack gap={2}>
                 <Text size="sm" c="var(--bl-text-secondary)">
-                  IP: {device.ipAddress}:{device.port}
+                  IP: {formatDeviceAddress(device.ipAddress, device.port, device.tlsPort)}
                 </Text>
                 <FingerprintText
                   label={DEVICE_KEY_LABEL}

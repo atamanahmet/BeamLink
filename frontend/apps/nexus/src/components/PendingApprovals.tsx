@@ -1,7 +1,7 @@
 import { Clock } from "lucide-react";
 import { Center, Loader, Stack, Text, Title } from "@mantine/core";
 import { DEVICE_KEY_LABEL } from "@beamlink/core";
-import { formatDate } from "@beamlink/features";
+import { formatDate, formatDeviceAddress } from "@beamlink/features";
 import {
   useNexusAdminMutations,
   useNexusPendingQuery,
@@ -47,13 +47,13 @@ export const PendingApprovals = () => {
             key={device.id}
             title={device.name}
             lines={[
-              `IP: ${device.ipAddress}:${device.port}`,
+              `IP: ${formatDeviceAddress(device.ipAddress, device.port, device.tlsPort)}`,
               `${DEVICE_KEY_LABEL}: ${device.fingerprint ?? ""}`,
               `Requested At: ${formatDate(device.registeredAt ?? "")}`,
             ]}
             approvePreview={{
               name: device.name,
-              ip: `${device.ipAddress}:${device.port}`,
+              ip: formatDeviceAddress(device.ipAddress, device.port, device.tlsPort),
               fingerprint: device.fingerprint ?? "",
             }}
             onApprove={() => approveDevice.mutate(device.id)}

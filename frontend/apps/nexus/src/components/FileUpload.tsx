@@ -1,10 +1,11 @@
-import { useState, useRef } from "react";
+import { useCallback, useState, useRef } from "react";
 import { Stack, Title } from "@mantine/core";
 import { usePlatform } from "@beamlink/platform";
 import {
   BigDropDialog,
   DropZone,
   FileBrowserModal,
+  LanAddressesSection,
   PeerSelect,
   UploadBanner,
   dispatchErrorMessage,
@@ -19,6 +20,7 @@ import {
 } from "@beamlink/features";
 import { problemFromUnknown } from "@beamlink/core";
 import { transferApi, peersApi } from "../api/transferApi";
+import { settingsApi } from "../api/settingsApi";
 import { useAuthStore } from "../store/authStore";
 
 interface FileUploadProps {
@@ -80,7 +82,7 @@ export const FileUpload = ({ onTransferStarted }: FileUploadProps) => {
         paths: validPaths,
         targetDeviceId: peer.id,
         targetIp: peer.ipAddress,
-        targetPort: peer.port,
+        targetPort: peer.tlsPort ?? peer.port,
       });
       const notice = dispatchNotice(results.items.length, results.skippedCount);
       if (notice) {
@@ -148,14 +150,24 @@ export const FileUpload = ({ onTransferStarted }: FileUploadProps) => {
     deviceName: p.deviceName,
     ipAddress: p.ipAddress,
     port: p.port,
+    tlsPort: p.tlsPort,
     online: p.online,
   }));
+  const getLanAddresses = settingsApi.getLanAddresses;
+  const loadLanAddresses = useCallback(
+    () => (getLanAddresses ? getLanAddresses() : Promise.reject()),
+    [getLanAddresses],
+  );
 
   return (
     <Stack gap="lg" w="100%" maw={900} mx="auto">
       <Title order={2} c="var(--bl-text-primary)">
         Send to Network
       </Title>
+
+      {getLanAddresses ? (
+        <LanAddressesSection load={loadLanAddresses} />
+      ) : null}
 
       <PeerSelect
         options={peerOptions}

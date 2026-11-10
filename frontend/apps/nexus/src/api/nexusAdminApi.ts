@@ -6,6 +6,7 @@ export type NexusDevice = {
   name: string;
   ipAddress: string;
   port: number;
+  tlsPort?: number | null;
   online: boolean;
   state: string;
   requestedName?: string;

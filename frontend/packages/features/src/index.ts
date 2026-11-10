@@ -47,6 +47,10 @@ export {
   type SettingsViewProps,
 } from "./settings/SettingsView.tsx";
 export {
+  LanAddressesSection,
+  type LanAddressesSectionProps,
+} from "./settings/LanAddressesSection.tsx";
+export {
   SettingsAppearanceSection,
   type SettingsAppearanceSectionProps,
 } from "./settings/SettingsAppearanceSection.tsx";
@@ -120,6 +124,7 @@ export {
   shouldOpenTransfers,
 } from "./send/dispatchNotice.ts";
 export { PeerSelect, type PeerSelectProps, type PeerOption } from "./send/PeerSelect.tsx";
+export { formatDeviceAddress } from "./send/formatDeviceAddress.ts";
 export { mapSharedFilesToPaths } from "./send/mapSharedFilesToPaths.ts";
 export {
   getDropStatus,

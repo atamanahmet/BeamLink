@@ -60,6 +60,7 @@ export type {
   ResumePolicyResponse,
   ChangeCredentialsRequest,
   DeviceReRegisterResult,
+  LanAddressesResponse,
   SettingsApi,
 } from "./api.ts";
 

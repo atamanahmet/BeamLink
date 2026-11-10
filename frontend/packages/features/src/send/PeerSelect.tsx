@@ -1,10 +1,12 @@
 import { NativeSelect, Stack, Text } from "@mantine/core";
+import { formatDeviceAddress } from "./formatDeviceAddress.ts";
 
 export type PeerOption = {
   deviceId: string;
   deviceName: string;
   ipAddress: string;
   port: number;
+  tlsPort?: number | null;
   online: boolean;
 };
 
@@ -33,7 +35,7 @@ export const PeerSelect = ({
         { value: "", label: "Choose destination peer..." },
         ...options.map((peer) => ({
           value: peer.deviceId,
-          label: `${peer.deviceName} (${peer.ipAddress}:${peer.port}), ${peer.online ? "Online" : "Offline"}`,
+          label: `${peer.deviceName} (${formatDeviceAddress(peer.ipAddress, peer.port, peer.tlsPort)}), ${peer.online ? "Online" : "Offline"}`,
         })),
       ]}
     />

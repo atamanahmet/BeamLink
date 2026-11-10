@@ -102,6 +102,10 @@ export const peersApi: PeersApi = {
       ipAddress: String(p.ipAddress ?? ""),
       port: Number(p.port ?? 0),
       online: Boolean(p.online),
+      tlsPort:
+        p.tlsPort == null || p.tlsPort === ""
+          ? null
+          : Number(p.tlsPort),
     }));
   },
 };

@@ -1,7 +1,8 @@
-import type { ReactNode } from "react";
+import { useCallback, type ReactNode } from "react";
 import { Button, Stack, Tabs } from "@mantine/core";
 import { CONNECT_LABEL, type HealthApi, type SettingsApi } from "@beamlink/core";
 import { FileBrowserModal } from "../FileBrowserModal.tsx";
+import { LanAddressesSection } from "./LanAddressesSection.tsx";
 import { SettingsAppearanceSection } from "./SettingsAppearanceSection.tsx";
 import { SettingsGeneralSection } from "./SettingsGeneralSection.tsx";
 import { SettingsHeader } from "./SettingsHeader.tsx";
@@ -57,6 +58,11 @@ export function SettingsView({
   const { tab, handleTabChange, backendOnline, ctrl, unit, setUnit } =
     useSettingsView({ settingsApi, healthApi, onLogout });
   const openConnect = useConnectOpen();
+  const getLanAddresses = settingsApi.getLanAddresses;
+  const loadLanAddresses = useCallback(
+    () => (getLanAddresses ? getLanAddresses() : Promise.reject()),
+    [getLanAddresses],
+  );
 
   return (
     <Stack gap="md" w="100%" maw={672} mx="auto">
@@ -70,31 +76,36 @@ export function SettingsView({
         </Tabs.List>
 
         <Tabs.Panel value="general" pt="md">
-          {nexusTlsPin ? (
-            <Button onClick={openConnect} mb="md">
-              {CONNECT_LABEL}
-            </Button>
-          ) : null}
-          <SettingsGeneralSection
-            backendOnline={backendOnline}
-            uploadDir={ctrl.uploadDir}
-            onOpenFolder={() => void ctrl.openFolder()}
-            onBrowse={() => ctrl.setFolderBrowserOpen(true)}
-            showCredentials={showCredentials}
-            credentials={ctrl.credentials}
-            onChangeCredentials={(patch) =>
-              ctrl.setCredentials((prev) => ({ ...prev, ...patch }))
-            }
-            onSubmitCredentials={() => void ctrl.changeCredentials()}
-            onLogoutAll={onLogoutAll}
-            log={ctrl.log}
-            onOpenLogs={() => void ctrl.openLogs()}
-            settingsApi={settingsApi}
-            dangerZoneKind={dangerZoneKind}
-            onAfterFactoryReset={onAfterFactoryReset}
-            generalExtra={generalExtra}
-            generalBottom={generalBottom}
-          />
+          <Stack gap="md">
+            {nexusTlsPin ? (
+              <Button onClick={openConnect}>
+                {CONNECT_LABEL}
+              </Button>
+            ) : null}
+            {getLanAddresses ? (
+              <LanAddressesSection load={loadLanAddresses} />
+            ) : null}
+            <SettingsGeneralSection
+              backendOnline={backendOnline}
+              uploadDir={ctrl.uploadDir}
+              onOpenFolder={() => void ctrl.openFolder()}
+              onBrowse={() => ctrl.setFolderBrowserOpen(true)}
+              showCredentials={showCredentials}
+              credentials={ctrl.credentials}
+              onChangeCredentials={(patch) =>
+                ctrl.setCredentials((prev) => ({ ...prev, ...patch }))
+              }
+              onSubmitCredentials={() => void ctrl.changeCredentials()}
+              onLogoutAll={onLogoutAll}
+              log={ctrl.log}
+              onOpenLogs={() => void ctrl.openLogs()}
+              settingsApi={settingsApi}
+              dangerZoneKind={dangerZoneKind}
+              onAfterFactoryReset={onAfterFactoryReset}
+              generalExtra={generalExtra}
+              generalBottom={generalBottom}
+            />
+          </Stack>
         </Tabs.Panel>
 
         <Tabs.Panel value="transfers" pt="md">

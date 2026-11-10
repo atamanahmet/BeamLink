@@ -43,6 +43,13 @@ export const settingsApi: SettingsApi = {
     await apiClient.put("/settings/min-free-space", { value });
   },
 
+  getLanAddresses: async () =>
+    (
+      await apiClient.get<{ addresses: string[]; tlsPort: number }>(
+        "/settings/lan-addresses",
+      )
+    ).data,
+
   openUploadsFolder: async () => {
     await apiClient.post("/storage/open-uploads-folder");
   },
