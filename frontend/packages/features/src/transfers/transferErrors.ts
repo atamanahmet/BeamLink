@@ -37,7 +37,12 @@ export function transferActionErrorMessage(
 ): string {
   const problem = problemFromUnknown(err);
   const reasonText = mapErrorReason(problem.reason);
-  if (problem.reason === "CONNECT_TIMEOUT" && reasonText) {
+  if (
+    (problem.reason === "CONNECT_TIMEOUT"
+      || problem.reason === "TLS_OTHER"
+      || problem.reason === "TLS_TRUST")
+    && reasonText
+  ) {
     return reasonText;
   }
   if (problem.code) return mapTransferErrorCode(problem.code);

@@ -22,8 +22,8 @@ const REASON_TEXT: Record<string, string> = {
     "Could not reach the other device. If it runs Windows, its firewall may be blocking BeamLink. Allow BeamLink on Private networks (needs an admin once).",
   REFUSED: "The connection was refused.",
   UNKNOWN_HOST: "The host could not be found.",
-  TLS_TRUST: "The certificate does not match the pinned one.",
-  TLS_OTHER: "The TLS connection failed.",
+  TLS_TRUST: "TLS handshake with the peer failed",
+  TLS_OTHER: "TLS handshake with the peer failed",
   UNKNOWN: "Something went wrong.",
 };
 

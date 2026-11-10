@@ -92,9 +92,11 @@ describe("mapErrorReason", () => {
     expect(mapErrorReason("REFUSED")).toBe("The connection was refused.");
     expect(mapErrorReason("UNKNOWN_HOST")).toBe("The host could not be found.");
     expect(mapErrorReason("TLS_TRUST")).toBe(
-      "The certificate does not match the pinned one.",
+      "TLS handshake with the peer failed",
     );
-    expect(mapErrorReason("TLS_OTHER")).toBe("The TLS connection failed.");
+    expect(mapErrorReason("TLS_OTHER")).toBe(
+      "TLS handshake with the peer failed",
+    );
     expect(mapErrorReason("UNKNOWN")).toBe("Something went wrong.");
   });
 

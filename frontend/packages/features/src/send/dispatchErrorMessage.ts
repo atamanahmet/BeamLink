@@ -7,7 +7,12 @@ import { mapTransferErrorCode } from "../transfers/transferErrors.ts";
 export function dispatchErrorMessage(err: unknown): string {
   const problem = problemFromUnknown(err);
   const reasonText = mapErrorReason(problem.reason);
-  if (problem.reason === "CONNECT_TIMEOUT" && reasonText) {
+  if (
+    (problem.reason === "CONNECT_TIMEOUT"
+      || problem.reason === "TLS_OTHER"
+      || problem.reason === "TLS_TRUST")
+    && reasonText
+  ) {
     return reasonText;
   }
   if (problem.code === "TARGET_UNREACHABLE" || problem.code === "PEER_UNREACHABLE") {
