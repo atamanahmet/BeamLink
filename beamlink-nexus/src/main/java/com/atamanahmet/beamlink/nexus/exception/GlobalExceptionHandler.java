@@ -104,10 +104,13 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
             HttpStatus status = reason == ErrorReason.TIMEOUT || reason == ErrorReason.CONNECT_TIMEOUT
                     ? HttpStatus.GATEWAY_TIMEOUT
                     : HttpStatus.BAD_GATEWAY;
+            String detail = reason == ErrorReason.TLS_OTHER || reason == ErrorReason.TLS_TRUST
+                    ? "TLS handshake with the peer failed"
+                    : FileTransferErrorRule.TARGET_UNREACHABLE_MESSAGE;
             return problem(
                     status,
                     "Target unreachable",
-                    FileTransferErrorRule.TARGET_UNREACHABLE_MESSAGE,
+                    detail,
                     FileTransferErrorRule.TARGET_UNREACHABLE,
                     ex);
         }

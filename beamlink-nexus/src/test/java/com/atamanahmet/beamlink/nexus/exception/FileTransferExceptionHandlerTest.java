@@ -81,6 +81,7 @@ class FileTransferExceptionHandlerTest {
         ResponseEntity<ProblemDetail> res = handler.handleFileTransfer(ex);
         assertThat(res.getStatusCode()).isEqualTo(HttpStatus.BAD_GATEWAY);
         assertThat(res.getBody()).isNotNull();
+        assertThat(res.getBody().getDetail()).isEqualTo("TLS handshake with the peer failed");
         assertThat(res.getBody().getProperties()).containsEntry("code", FileTransferErrorRule.TARGET_UNREACHABLE);
         assertThat(res.getBody().getProperties()).containsEntry("reason", ErrorReason.TLS_TRUST.name());
         assertLogged(Level.WARN, false);
@@ -94,6 +95,7 @@ class FileTransferExceptionHandlerTest {
         ResponseEntity<ProblemDetail> res = handler.handleFileTransfer(ex);
         assertThat(res.getStatusCode()).isEqualTo(HttpStatus.BAD_GATEWAY);
         assertThat(res.getBody()).isNotNull();
+        assertThat(res.getBody().getDetail()).isEqualTo("TLS handshake with the peer failed");
         assertThat(res.getBody().getProperties()).containsEntry("code", FileTransferErrorRule.TARGET_UNREACHABLE);
         assertThat(res.getBody().getProperties()).containsEntry("reason", ErrorReason.TLS_OTHER.name());
         assertLogged(Level.WARN, false);
