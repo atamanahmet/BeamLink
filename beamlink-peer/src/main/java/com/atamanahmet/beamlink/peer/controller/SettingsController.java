@@ -1,8 +1,10 @@
 package com.atamanahmet.beamlink.peer.controller;
 
+import com.atamanahmet.beamlink.peer.config.DeviceConfig;
 import com.atamanahmet.beamlink.peer.domain.enums.SettingKey;
 import com.atamanahmet.beamlink.peer.exception.InvalidRequestException;
 import com.atamanahmet.beamlink.peer.exception.TransferProtocolException;
+import com.atamanahmet.beamlink.peer.net.LanIpv4Addresses;
 import com.atamanahmet.beamlink.peer.service.DiskReserveProvider;
 import com.atamanahmet.beamlink.peer.service.SettingsService;
 import com.atamanahmet.beamlink.peer.service.SpeedLimitSettingsCache;
@@ -12,6 +14,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 
 @RestController
@@ -22,6 +25,7 @@ public class SettingsController {
     private final SettingsService settingsService;
     private final SpeedLimitSettingsCache speedLimitSettingsCache;
     private final DiskReserveProvider diskReserveProvider;
+    private final DeviceConfig deviceConfig;
 
     @GetMapping("/speed-cap")
     public ResponseEntity<Map<String, Object>> getSpeedCap() {
@@ -61,6 +65,17 @@ public class SettingsController {
             speedLimitSettingsCache.setTotalMbps(value);
         }
         return ResponseEntity.ok(limitBody(speedLimitSettingsCache.getTotalMbps()));
+    }
+
+    /**
+     * LAN IPv4 list and TLS port for the UI copy lines.
+     */
+    @GetMapping("/lan-addresses")
+    public ResponseEntity<Map<String, Object>> getLanAddresses() {
+        List<String> addresses = LanIpv4Addresses.list();
+        return ResponseEntity.ok(Map.of(
+                "addresses", addresses,
+                "tlsPort", deviceConfig.getTlsPort()));
     }
 
     @GetMapping("/min-free-space")
