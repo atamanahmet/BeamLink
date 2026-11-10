@@ -1,9 +1,11 @@
 package com.atamanahmet.beamlink.nexus.controller;
 
+import com.atamanahmet.beamlink.nexus.config.NexusConfig;
 import com.atamanahmet.beamlink.nexus.domain.enums.ResumePolicyMode;
 import com.atamanahmet.beamlink.nexus.domain.enums.SettingKey;
 import com.atamanahmet.beamlink.nexus.exception.InvalidRequestException;
 import com.atamanahmet.beamlink.nexus.exception.TransferProtocolException;
+import com.atamanahmet.beamlink.nexus.net.LanIpv4Addresses;
 import com.atamanahmet.beamlink.nexus.service.DiskReserveProvider;
 import com.atamanahmet.beamlink.nexus.service.NexusResumePolicyStore;
 import com.atamanahmet.beamlink.nexus.service.SettingsService;
@@ -14,6 +16,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 
 @RestController
@@ -25,6 +28,7 @@ public class SettingsController {
     private final SpeedLimitSettingsCache speedLimitSettingsCache;
     private final NexusResumePolicyStore resumePolicyStore;
     private final DiskReserveProvider diskReserveProvider;
+    private final NexusConfig nexusConfig;
 
     @GetMapping("/speed-cap")
     public ResponseEntity<Map<String, Object>> getSpeedCap() {
@@ -90,6 +94,17 @@ public class SettingsController {
                     "resumePolicy must be OWNER_ONLY or ANYONE",
                     HttpStatus.BAD_REQUEST);
         }
+    }
+
+    /**
+     * LAN IPv4 list and TLS port for the UI copy lines.
+     */
+    @GetMapping("/lan-addresses")
+    public ResponseEntity<Map<String, Object>> getLanAddresses() {
+        List<String> addresses = LanIpv4Addresses.list();
+        return ResponseEntity.ok(Map.of(
+                "addresses", addresses,
+                "tlsPort", nexusConfig.getTlsPort()));
     }
 
     @GetMapping("/min-free-space")

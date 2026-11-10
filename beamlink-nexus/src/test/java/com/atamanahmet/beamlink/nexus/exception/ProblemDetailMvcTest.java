@@ -1,5 +1,6 @@
 package com.atamanahmet.beamlink.nexus.exception;
 
+import com.atamanahmet.beamlink.nexus.config.NexusConfig;
 import com.atamanahmet.beamlink.nexus.controller.NexusAuthController;
 import com.atamanahmet.beamlink.nexus.controller.SettingsController;
 import com.atamanahmet.beamlink.nexus.controller.StorageController;
@@ -184,7 +185,8 @@ class ProblemDetailMvcTest {
                 mock(SettingsService.class),
                 mock(SpeedLimitSettingsCache.class),
                 mock(NexusResumePolicyStore.class),
-                mock(DiskReserveProvider.class)));
+                mock(DiskReserveProvider.class),
+                mock(NexusConfig.class)));
         settingsMvc.perform(put("/api/nexus/settings/resume-policy")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"resumePolicy\":\"NOPE\"}"))
