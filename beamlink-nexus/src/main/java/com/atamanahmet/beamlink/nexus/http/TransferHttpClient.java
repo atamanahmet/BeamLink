@@ -45,27 +45,27 @@ public class TransferHttpClient {
     /**
      * scheme://ip:port from stored device TLS fields.
      */
-    public String baseUrl(String ip, int httpPort) {
-        return transport(ip, httpPort).baseUrl(ip);
+    public String baseUrl(UUID deviceId, String ip) {
+        return transport(deviceId).baseUrl(ip);
     }
 
     /**
      * Listed pin. Missing device or pin throws MissingPinException.
      */
-    public String pin(String ip, int httpPort) {
-        return transport(ip, httpPort).pin();
+    public String pin(UUID deviceId) {
+        return transport(deviceId).pin();
     }
 
     /**
      * Sends with the listed pin client. Missing pin is refused.
      */
-    public HttpResponse<String> exchange(HttpRequest request, String ip, int httpPort)
+    public HttpResponse<String> exchange(HttpRequest request, UUID deviceId)
             throws IOException, InterruptedException {
-        return httpSender.sendPinned(request, pin(ip, httpPort));
+        return httpSender.sendPinned(request, pin(deviceId));
     }
 
-    private PeerTransport transport(String ip, int httpPort) {
-        Device device = deviceService.findByLanAddress(ip, httpPort).orElse(null);
+    private PeerTransport transport(UUID deviceId) {
+        Device device = deviceService.findOptional(deviceId).orElse(null);
         if (device == null) {
             throw new PeerTransport.MissingPinException();
         }
@@ -81,7 +81,7 @@ public class TransferHttpClient {
             String fileName,
             long fileSize
     ) {
-        String url = baseUrl(request.getTargetIp(), request.getTargetPort())
+        String url = baseUrl(request.getTargetDeviceId(), request.getTargetIp())
                 + "/api/transfers/receive";
         try {
             Map<String, Object> payload = new java.util.LinkedHashMap<>();
@@ -102,8 +102,7 @@ public class TransferHttpClient {
                     .POST(HttpRequest.BodyPublishers.ofString(body))
                     .build();
 
-            HttpResponse<String> response = exchange(
-                    httpRequest, request.getTargetIp(), request.getTargetPort());
+            HttpResponse<String> response = exchange(httpRequest, request.getTargetDeviceId());
             throwIfRegisterRejected(
                     response, "Target rejected transfer registration. Status: ");
         } catch (FileTransferException | TransferProtocolException e) {
@@ -123,8 +122,8 @@ public class TransferHttpClient {
      * Registers a batch transfer on the target before child sends start.
      */
     public void registerBatch(
+            UUID targetDeviceId,
             String targetIp,
-            int targetPort,
             UUID batchTransferId,
             UUID sourceDeviceId,
             UUID dispatchId,
@@ -132,7 +131,7 @@ public class TransferHttpClient {
             long totalSize,
             List<ReceiveBatchRequest.FileEntry> fileEntries
     ) {
-        String url = baseUrl(targetIp, targetPort) + "/api/transfers/receive-batch";
+        String url = baseUrl(targetDeviceId, targetIp) + "/api/transfers/receive-batch";
         try {
             ReceiveBatchRequest payload = new ReceiveBatchRequest();
             payload.setBatchTransferId(batchTransferId);
@@ -150,7 +149,7 @@ public class TransferHttpClient {
                             objectMapper.writeValueAsString(payload)))
                     .build();
 
-            HttpResponse<String> response = exchange(httpRequest, targetIp, targetPort);
+            HttpResponse<String> response = exchange(httpRequest, targetDeviceId);
             throwIfRegisterRejected(
                     response, "Target rejected batch registration. Status: ");
 
@@ -168,8 +167,8 @@ public class TransferHttpClient {
      * Registers a directory transfer on the target before child sends start.
      */
     public void registerDirectory(
+            UUID targetDeviceId,
             String targetIp,
-            int targetPort,
             UUID directoryTransferId,
             UUID dispatchId,
             UUID sourceDeviceId,
@@ -179,7 +178,7 @@ public class TransferHttpClient {
             List<String> emptyDirectories,
             List<ReceiveDirectoryRequest.FileEntry> fileEntries
     ) {
-        String url = baseUrl(targetIp, targetPort)
+        String url = baseUrl(targetDeviceId, targetIp)
                 + "/api/transfers/receive-directory";
         try {
             ReceiveDirectoryRequest payload = new ReceiveDirectoryRequest();
@@ -200,7 +199,7 @@ public class TransferHttpClient {
                             objectMapper.writeValueAsString(payload)))
                     .build();
 
-            HttpResponse<String> response = exchange(httpRequest, targetIp, targetPort);
+            HttpResponse<String> response = exchange(httpRequest, targetDeviceId);
             throwIfRegisterRejected(
                     response, "Target rejected directory registration. Status: ");
         } catch (FileTransferException | TransferProtocolException e) {
@@ -217,22 +216,22 @@ public class TransferHttpClient {
      * Start offset from receiver /offset when local row has progress, else 0.
      */
     public long resolveStartOffset(
-            String targetIp, Integer targetPort, UUID transferId, long localConfirmedOffset) {
+            UUID targetDeviceId, String targetIp, UUID transferId, long localConfirmedOffset) {
         if (!StartOffsetRule.needsReceiverQuery(localConfirmedOffset)) {
             return 0L;
         }
-        if (targetIp == null || targetIp.isBlank() || targetPort == null) {
+        if (targetDeviceId == null || targetIp == null || targetIp.isBlank()) {
             throw new FileTransferException(
                     "Cannot query offset: missing peer address", null);
         }
-        return queryConfirmedOffset(targetIp, targetPort, transferId);
+        return queryConfirmedOffset(targetDeviceId, targetIp, transferId);
     }
 
     /**
      * Queries the target's confirmed offset before resuming a paused transfer.
      */
-    public long queryConfirmedOffset(String targetIp, int targetPort, UUID transferId) {
-        String url = baseUrl(targetIp, targetPort) + "/api/transfers/" + transferId + "/offset";
+    public long queryConfirmedOffset(UUID targetDeviceId, String targetIp, UUID transferId) {
+        String url = baseUrl(targetDeviceId, targetIp) + "/api/transfers/" + transferId + "/offset";
 
         try {
             HttpRequest request = HttpRequest.newBuilder()
@@ -243,7 +242,7 @@ public class TransferHttpClient {
                     .GET()
                     .build();
 
-            HttpResponse<String> response = exchange(request, targetIp, targetPort);
+            HttpResponse<String> response = exchange(request, targetDeviceId);
             if (response.statusCode() != 200) {
                 if (SessionLostRule.isLost(jsonField(response, "code"))) {
                     throw new TransferProtocolException(
@@ -345,8 +344,8 @@ public class TransferHttpClient {
     /**
      * Tells peer to cancel their side. Best effort, logs and continues on failure.
      */
-    public void notifyCancelToPeer(String peerIp, int peerPort, UUID transferId) {
-        String url = baseUrl(peerIp, peerPort) + "/api/transfers/" + transferId + "/cancel-notify";
+    public void notifyCancelToPeer(UUID peerDeviceId, String peerIp, UUID transferId) {
+        String url = baseUrl(peerDeviceId, peerIp) + "/api/transfers/" + transferId + "/cancel-notify";
         try {
             HttpRequest request = HttpRequest.newBuilder()
                     .uri(URI.create(url))
@@ -356,7 +355,7 @@ public class TransferHttpClient {
                     .DELETE()
                     .build();
 
-            HttpResponse<String> response = exchange(request, peerIp, peerPort);
+            HttpResponse<String> response = exchange(request, peerDeviceId);
             if (response.statusCode() != 200) {
                 log.warn("Peer returned {} on cancel notify for {}",
                         response.statusCode(), transferId);
@@ -369,8 +368,8 @@ public class TransferHttpClient {
     /**
      * Tells peer to mark their side FAILED with the same reason. Best effort.
      */
-    public void notifyFailToPeer(String peerIp, int peerPort, UUID transferId, String reason) {
-        String url = baseUrl(peerIp, peerPort) + "/api/transfers/" + transferId + "/fail-notify";
+    public void notifyFailToPeer(UUID peerDeviceId, String peerIp, UUID transferId, String reason) {
+        String url = baseUrl(peerDeviceId, peerIp) + "/api/transfers/" + transferId + "/fail-notify";
         try {
             String body = objectMapper.writeValueAsString(Map.of(
                     "reason", reason != null ? reason : "FAILED"));
@@ -383,7 +382,7 @@ public class TransferHttpClient {
                     .POST(HttpRequest.BodyPublishers.ofString(body))
                     .build();
 
-            HttpResponse<String> response = exchange(request, peerIp, peerPort);
+            HttpResponse<String> response = exchange(request, peerDeviceId);
             if (response.statusCode() != 200) {
                 log.warn("Peer returned {} on fail notify for {}",
                         response.statusCode(), transferId);
@@ -397,16 +396,16 @@ public class TransferHttpClient {
      * Tells peer to pause their side. Best effort, logs and continues on failure.
      */
     public void notifyPauseToPeer(
-            String peerIp, int peerPort, UUID transferId, PauseOwner pausedBy) {
-        notifyPauseToPeer(peerIp, peerPort, transferId, pausedBy, null);
+            UUID peerDeviceId, String peerIp, UUID transferId, PauseOwner pausedBy) {
+        notifyPauseToPeer(peerDeviceId, peerIp, transferId, pausedBy, null);
     }
 
     /**
      * Tells peer to pause their side. Best effort, logs and continues on failure.
      */
     public void notifyPauseToPeer(
-            String peerIp, int peerPort, UUID transferId, PauseOwner pausedBy, String reason) {
-        String url = baseUrl(peerIp, peerPort)
+            UUID peerDeviceId, String peerIp, UUID transferId, PauseOwner pausedBy, String reason) {
+        String url = baseUrl(peerDeviceId, peerIp)
                 + "/api/transfers/" + transferId + "/pause-notify";
         try {
             Map<String, String> payload = new java.util.HashMap<>();
@@ -424,7 +423,7 @@ public class TransferHttpClient {
                     .POST(HttpRequest.BodyPublishers.ofString(body))
                     .build();
 
-            HttpResponse<String> response = exchange(request, peerIp, peerPort);
+            HttpResponse<String> response = exchange(request, peerDeviceId);
             if (response.statusCode() != 200) {
                 log.warn("Peer returned {} on pause notify for {}",
                         response.statusCode(), transferId);
@@ -437,8 +436,8 @@ public class TransferHttpClient {
     /**
      * Tells peer to resume their side. Best effort, logs and continues on failure.
      */
-    public void notifyResumeToPeer(String peerIp, int peerPort, UUID transferId) {
-        String url = baseUrl(peerIp, peerPort)
+    public void notifyResumeToPeer(UUID peerDeviceId, String peerIp, UUID transferId) {
+        String url = baseUrl(peerDeviceId, peerIp)
                 + "/api/transfers/" + transferId + "/resume-notify";
         try {
             HttpRequest request = HttpRequest.newBuilder()
@@ -449,7 +448,7 @@ public class TransferHttpClient {
                     .POST(HttpRequest.BodyPublishers.noBody())
                     .build();
 
-            HttpResponse<String> response = exchange(request, peerIp, peerPort);
+            HttpResponse<String> response = exchange(request, peerDeviceId);
             if (response.statusCode() != 200) {
                 log.warn("Peer returned {} on resume notify for {}",
                         response.statusCode(), transferId);
@@ -462,8 +461,8 @@ public class TransferHttpClient {
     /**
      * Asks peer to resume and throws PEER_UNREACHABLE when the peer does not accept.
      */
-    public void requestResumeFromPeer(String peerIp, int peerPort, UUID transferId) {
-        String url = baseUrl(peerIp, peerPort)
+    public void requestResumeFromPeer(UUID peerDeviceId, String peerIp, UUID transferId) {
+        String url = baseUrl(peerDeviceId, peerIp)
                 + "/api/transfers/" + transferId + "/resume-notify";
         try {
             HttpRequest request = HttpRequest.newBuilder()
@@ -474,7 +473,7 @@ public class TransferHttpClient {
                     .POST(HttpRequest.BodyPublishers.noBody())
                     .build();
 
-            HttpResponse<String> response = exchange(request, peerIp, peerPort);
+            HttpResponse<String> response = exchange(request, peerDeviceId);
             if (response.statusCode() != 200) {
                 throw new TransferProtocolException(
                         "PEER_UNREACHABLE",

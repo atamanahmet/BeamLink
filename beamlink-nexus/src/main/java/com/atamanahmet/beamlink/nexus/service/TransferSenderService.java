@@ -121,7 +121,7 @@ public class TransferSenderService {
         long targetOffset;
         try {
             targetOffset = transferHttpClient.resolveStartOffset(
-                    transfer.getTargetIp(), transfer.getTargetPort(), transferId,
+                    transfer.getTargetDeviceId(), transfer.getTargetIp(), transferId,
                     transfer.getConfirmedOffset());
         } catch (TransferProtocolException e) {
             if (SessionLostRule.isLost(e.getCode())) {
@@ -187,9 +187,9 @@ public class TransferSenderService {
             transfer.setStatus(TransferStatus.FAILED);
             transfer.setFailureReason(reason);
             fileTransferService.save(transfer);
-            if (transfer.getTargetIp() != null && transfer.getTargetPort() != null) {
+            if (transfer.getTargetDeviceId() != null && transfer.getTargetIp() != null) {
                 transferHttpClient.notifyFailToPeer(
-                        transfer.getTargetIp(), transfer.getTargetPort(), transferId, reason);
+                        transfer.getTargetDeviceId(), transfer.getTargetIp(), transferId, reason);
             }
         });
     }

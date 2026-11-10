@@ -362,10 +362,10 @@ public class ChunkReceiverService {
         liveConfirmedOffset.remove(transferId);
         lastReceiverSaveAt.remove(transferId);
         receiveStallTracker.remove(transferId);
-        if (transfer.getSourceIp() != null && transfer.getSourcePort() != null) {
+        if (transfer.getSourceDeviceId() != null && transfer.getSourceIp() != null) {
             transferHttpClient.notifyFailToPeer(
+                    transfer.getSourceDeviceId(),
                     transfer.getSourceIp(),
-                    transfer.getSourcePort(),
                     transferId,
                     "SIZE_MISMATCH");
         }
@@ -569,10 +569,10 @@ public class ChunkReceiverService {
         receiveFileChannels.close(transferId);
         receiveStallTracker.remove(transferId);
         lastReceiverSaveAt.remove(transferId);
-        if (transfer.getSourceIp() != null && transfer.getSourcePort() != null) {
+        if (transfer.getSourceDeviceId() != null && transfer.getSourceIp() != null) {
             transferHttpClient.notifyPauseToPeer(
+                    transfer.getSourceDeviceId(),
                     transfer.getSourceIp(),
-                    transfer.getSourcePort(),
                     transferId,
                     PauseOwner.TARGET,
                     DiskReserveRule.CODE);

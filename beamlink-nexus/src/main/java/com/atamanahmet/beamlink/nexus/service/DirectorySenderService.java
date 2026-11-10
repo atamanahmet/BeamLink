@@ -257,8 +257,8 @@ public class DirectorySenderService {
             List<ReceiveDirectoryRequest.FileEntry> fileEntries
     ) {
         transferHttpClient.registerDirectory(
+                request.getTargetDeviceId(),
                 request.getTargetIp(),
-                request.getTargetPort(),
                 directoryTransferId,
                 request.getDispatchId(),
                 sourceDeviceId,

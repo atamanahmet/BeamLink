@@ -87,13 +87,14 @@ public class TransferSender {
         AtomicLong maxConfirmed = new AtomicLong(0L);
         AtomicLong lastProgressSaveAt = new AtomicLong(0L);
 
-        String baseUrl = transferHttpClient.baseUrl(targetIp, targetPort);
+        UUID targetDeviceId = transfer.getTargetDeviceId();
+        String baseUrl = transferHttpClient.baseUrl(targetDeviceId, targetIp);
 
         try (RandomAccessFile raf = new RandomAccessFile(
                 Paths.get(transfer.getFilePath()).toFile(), "r")) {
 
             long startOffset = transferHttpClient.resolveStartOffset(
-                    targetIp, targetPort, transferId, transfer.getConfirmedOffset());
+                    targetDeviceId, targetIp, transferId, transfer.getConfirmedOffset());
             if (startOffset != transfer.getConfirmedOffset()) {
                 log.info("Correcting start offset for {} from {} to {}",
                         transferId, transfer.getConfirmedOffset(), startOffset);
@@ -103,7 +104,7 @@ public class TransferSender {
             maxConfirmed.set(startOffset);
 
             readAndDispatchChunks(
-                    raf, transfer, targetIp, targetPort, baseUrl, errors,
+                    raf, transfer, targetDeviceId, targetIp, baseUrl, errors,
                     maxConfirmed, lastProgressSaveAt);
             drainErrors(errors);
             flushProgress(transferId, maxConfirmed, lastProgressSaveAt);
@@ -141,8 +142,8 @@ public class TransferSender {
     private void readAndDispatchChunks(
             RandomAccessFile raf,
             FileTransfer transfer,
+            UUID targetDeviceId,
             String targetIp,
-            int targetPort,
             String baseUrl,
             ConcurrentLinkedQueue<Exception> errors,
             AtomicLong maxConfirmed,
@@ -184,7 +185,7 @@ public class TransferSender {
                     break;
                 }
                 offset = transferHttpClient.resolveStartOffset(
-                        targetIp, targetPort, transferId, resumed.getConfirmedOffset());
+                        targetDeviceId, targetIp, transferId, resumed.getConfirmedOffset());
                 if (offset != resumed.getConfirmedOffset()) {
                     log.info("Correcting resume offset for {} from {} to {}",
                             transferId, resumed.getConfirmedOffset(), offset);
@@ -237,7 +238,7 @@ public class TransferSender {
             FileTransfer dispatchTransfer = current;
 
             dispatchChunk(
-                    dispatchTransfer, targetIp, targetPort, baseUrl, chunkOffset, chunkEnd, chunk, errors,
+                    dispatchTransfer, targetDeviceId, targetIp, baseUrl, chunkOffset, chunkEnd, chunk, errors,
                     maxConfirmed, lastProgressSaveAt
             );
 
@@ -250,8 +251,8 @@ public class TransferSender {
      */
     private void dispatchChunk(
             FileTransfer transfer,
+            UUID targetDeviceId,
             String targetIp,
-            int targetPort,
             String baseUrl,
             long chunkOffset,
             long chunkEnd,
@@ -265,7 +266,7 @@ public class TransferSender {
             transferSpeedLimiter.acquire(transfer.getTransferId(), transfer.getSpeedLimitMbps(), chunk.length);
 
             ChunkAckResponse ack = sendChunkWithRetry(
-                    targetIp, targetPort, baseUrl, transfer.getTransferId(),
+                    targetDeviceId, targetIp, baseUrl, transfer.getTransferId(),
                     chunkOffset, chunkEnd,
                     transfer.getFileSize(), chunk,
                     transfer.getMaxRetries()
@@ -395,7 +396,7 @@ public class TransferSender {
     }
 
     private ChunkAckResponse sendChunkWithRetry(
-            String targetIp, int targetPort,
+            UUID targetDeviceId, String targetIp,
             String baseUrl, UUID transferId, long offset, long chunkEnd,
             long fileSize, byte[] chunk, int maxRetries
     ) throws IOException, InterruptedException {
@@ -405,7 +406,7 @@ public class TransferSender {
         for (int attempt = 1; attempt <= maxRetries; attempt++) {
             assertSendStillRunnable(transferId);
             try {
-                return sendChunk(targetIp, targetPort, baseUrl, transferId, offset, chunkEnd, fileSize, chunk);
+                return sendChunk(targetDeviceId, targetIp, baseUrl, transferId, offset, chunkEnd, fileSize, chunk);
             } catch (Exception e) {
                 SendFailureKind kind = SendFailureRule.classify(e);
                 if (!SendFailureRule.allowsChunkRetry(kind)) {
@@ -455,7 +456,7 @@ public class TransferSender {
     }
 
     private ChunkAckResponse sendChunk(
-            String targetIp, int targetPort,
+            UUID targetDeviceId, String targetIp,
             String baseUrl, UUID transferId, long offset, long chunkEnd,
             long fileSize, byte[] chunk
     ) throws IOException, InterruptedException {
@@ -472,7 +473,7 @@ public class TransferSender {
                 .method("PATCH", HttpRequest.BodyPublishers.ofByteArray(chunk))
                 .build();
 
-        HttpResponse<String> response = transferHttpClient.exchange(request, targetIp, targetPort);
+        HttpResponse<String> response = transferHttpClient.exchange(request, targetDeviceId);
         if (response.statusCode() == 422) {
             throw new TransferProtocolException(
                     "CHUNK_CHECKSUM_MISMATCH",
@@ -582,10 +583,10 @@ public class TransferSender {
         transfer.setFailureReason(reason);
         fileTransferService.save(transfer);
         transferLocks.remove(transfer.getTransferId());
-        if (transfer.getTargetIp() != null && transfer.getTargetPort() != null) {
+        if (transfer.getTargetDeviceId() != null && transfer.getTargetIp() != null) {
             transferHttpClient.notifyFailToPeer(
+                    transfer.getTargetDeviceId(),
                     transfer.getTargetIp(),
-                    transfer.getTargetPort(),
                     transfer.getTransferId(),
                     reason);
         }
@@ -601,10 +602,10 @@ public class TransferSender {
         transfer.setPausedBy(resolved);
         fileTransferService.save(transfer);
         transferLocks.remove(transfer.getTransferId());
-        if (transfer.getTargetIp() != null && transfer.getTargetPort() != null) {
+        if (transfer.getTargetDeviceId() != null && transfer.getTargetIp() != null) {
             transferHttpClient.notifyPauseToPeer(
+                    transfer.getTargetDeviceId(),
                     transfer.getTargetIp(),
-                    transfer.getTargetPort(),
                     transfer.getTransferId(),
                     resolved);
         }

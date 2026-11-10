@@ -38,17 +38,19 @@ class TransferHttpClientStatusErrorTest {
         when(nexusService.getNexusPort()).thenReturn(7473);
         when(nexusService.getPeerPublicToken()).thenReturn("tok");
 
+        UUID deviceId = UUID.randomUUID();
         DeviceService deviceService = mock(DeviceService.class);
         Device device = new Device();
         device.setTlsFingerprint("aaaa bbbb");
         device.setTlsPort(9000);
         device.setPort(9000);
-        when(deviceService.findByLanAddress("192.168.1.5", 9000)).thenReturn(Optional.of(device));
+        when(deviceService.findOptional(deviceId)).thenReturn(Optional.of(device));
 
         TransferHttpClient client = new TransferHttpClient(
                 httpSender, new ObjectMapper(), nexusService, deviceService);
 
         InitiateTransferRequest request = new InitiateTransferRequest();
+        request.setTargetDeviceId(deviceId);
         request.setTargetIp("192.168.1.5");
         request.setTargetPort(9000);
 

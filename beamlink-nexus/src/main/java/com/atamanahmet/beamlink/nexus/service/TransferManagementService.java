@@ -392,7 +392,7 @@ public class TransferManagementService {
                     "No peer address stored for resume",
                     HttpStatus.SERVICE_UNAVAILABLE);
         }
-        transferHttpClient.requestResumeFromPeer(peer.ip(), peer.port(), ft.getTransferId());
+        transferHttpClient.requestResumeFromPeer(peer.deviceId(), peer.ip(), ft.getTransferId());
     }
 
     private TransferProtocolException alreadyPaused() {
@@ -420,7 +420,7 @@ public class TransferManagementService {
             return;
         }
         transferHttpClient.notifyPauseToPeer(
-                peer.ip(), peer.port(), ft.getTransferId(), pausedBy, ft.getFailureReason());
+                peer.deviceId(), peer.ip(), ft.getTransferId(), pausedBy, ft.getFailureReason());
     }
 
     /**
@@ -433,7 +433,7 @@ public class TransferManagementService {
                     ft.getTransferId());
             return;
         }
-        transferHttpClient.notifyResumeToPeer(peer.ip(), peer.port(), ft.getTransferId());
+        transferHttpClient.notifyResumeToPeer(peer.deviceId(), peer.ip(), ft.getTransferId());
     }
 
     /**
@@ -446,20 +446,20 @@ public class TransferManagementService {
                     ft.getTransferId());
             return;
         }
-        transferHttpClient.notifyCancelToPeer(peer.ip(), peer.port(), ft.getTransferId());
+        transferHttpClient.notifyCancelToPeer(peer.deviceId(), peer.ip(), ft.getTransferId());
     }
 
     private PeerAddress peerAddress(FileTransfer ft) {
-        if (ft.getTargetIp() != null && !ft.getTargetIp().isBlank()
-                && ft.getTargetPort() != null) {
-            return new PeerAddress(ft.getTargetIp(), ft.getTargetPort());
+        if (ft.getTargetDeviceId() != null
+                && ft.getTargetIp() != null && !ft.getTargetIp().isBlank()) {
+            return new PeerAddress(ft.getTargetDeviceId(), ft.getTargetIp());
         }
-        if (ft.getSourceIp() != null && !ft.getSourceIp().isBlank()
-                && ft.getSourcePort() != null) {
-            return new PeerAddress(ft.getSourceIp(), ft.getSourcePort());
+        if (ft.getSourceDeviceId() != null
+                && ft.getSourceIp() != null && !ft.getSourceIp().isBlank()) {
+            return new PeerAddress(ft.getSourceDeviceId(), ft.getSourceIp());
         }
         return null;
     }
 
-    private record PeerAddress(String ip, int port) {}
+    private record PeerAddress(UUID deviceId, String ip) {}
 }

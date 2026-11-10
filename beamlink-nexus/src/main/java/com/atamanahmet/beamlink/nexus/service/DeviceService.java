@@ -47,17 +47,6 @@ public class DeviceService {
         return deviceRepository.findByIpAddressAndPort(ipAddress, port);
     }
 
-    /**
-     * Device by LAN ip and advertised http or tls port.
-     */
-    public Optional<Device> findByLanAddress(String ipAddress, int port) {
-        Optional<Device> byHttp = deviceRepository.findByIpAddressAndPort(ipAddress, port);
-        if (byHttp.isPresent()) {
-            return byHttp;
-        }
-        return deviceRepository.findByIpAddressAndTlsPort(ipAddress, port);
-    }
-
     @Transactional
     public DeviceStatusResponse updateDeviceStatus(DeviceStatusRequest request) {
         StatusUpdatePayload payload = StatusUpdatePayload.builder()

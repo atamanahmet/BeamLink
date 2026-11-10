@@ -92,8 +92,8 @@ public class BatchSenderService {
         batchTransferService.saveChildren(fileTransfers);
         try {
             transferHttpClient.registerBatch(
+                    request.getTargetDeviceId(),
                     request.getTargetIp(),
-                    request.getTargetPort(),
                     batchTransferId,
                     sourceDeviceId,
                     request.getDispatchId(),
