@@ -30,7 +30,7 @@ class ResetServiceFactoryResetTest {
             Files.createDirectories(runtimeDir.resolve("data/database"));
             Files.createDirectories(runtimeDir.resolve("data/uploads"));
             Files.createDirectories(runtimeDir.resolve("logs"));
-            dbFile = runtimeDir.resolve("data/database/agent-reset.db");
+            dbFile = runtimeDir.resolve("data/database/peer-reset.db");
             System.setProperty("beamlink.runtime.dir", runtimeDir.toAbsolutePath().toString());
         } catch (IOException e) {
             throw new ExceptionInInitializerError(e);

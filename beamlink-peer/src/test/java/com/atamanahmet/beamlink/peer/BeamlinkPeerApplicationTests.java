@@ -32,7 +32,7 @@ class BeamlinkPeerApplicationTests {
             Files.createDirectories(runtimeDir.resolve("data/database"));
             Files.createDirectories(runtimeDir.resolve("data/uploads"));
             Files.createDirectories(runtimeDir.resolve("logs"));
-            dbFile = runtimeDir.resolve("data/database/agent-test.db");
+            dbFile = runtimeDir.resolve("data/database/peer-test.db");
             System.setProperty("beamlink.runtime.dir", runtimeDir.toAbsolutePath().toString());
         } catch (IOException e) {
             throw new ExceptionInInitializerError(e);

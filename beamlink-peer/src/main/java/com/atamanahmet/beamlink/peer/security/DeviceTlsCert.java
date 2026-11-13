@@ -38,8 +38,8 @@ import java.util.HexFormat;
 @Component
 public class DeviceTlsCert {
 
-    static final String KEYSTORE_FILE = "agent-tls.p12";
-    static final String PASS_FILE = "agent-tls.pass";
+    static final String KEYSTORE_FILE = "peer-tls.p12";
+    static final String PASS_FILE = "peer-tls.pass";
     static final String ALIAS = "beamlink-peer";
     private static final String CN = "CN=beamlink-peer";
     private static final String CURVE = "secp256r1";

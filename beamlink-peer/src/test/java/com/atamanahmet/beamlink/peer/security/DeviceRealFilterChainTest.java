@@ -49,7 +49,7 @@ class DeviceRealFilterChainTest {
             Files.createDirectories(runtimeDir.resolve("data/database"));
             Files.createDirectories(runtimeDir.resolve("data/uploads"));
             Files.createDirectories(runtimeDir.resolve("logs"));
-            dbFile = runtimeDir.resolve("data/database/agent-real.db");
+            dbFile = runtimeDir.resolve("data/database/peer-real.db");
             System.setProperty("beamlink.runtime.dir", runtimeDir.toAbsolutePath().toString());
             KeyPairGenerator gen = KeyPairGenerator.getInstance("RSA");
             gen.initialize(2048);

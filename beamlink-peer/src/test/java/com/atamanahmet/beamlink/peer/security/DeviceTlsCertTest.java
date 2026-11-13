@@ -27,10 +27,10 @@ class DeviceTlsCertTest {
 
     @Test
     void writeFailureLeavesNoFinalOrTemp() throws Exception {
-        Path store = dir.resolve("agent-tls.p12");
+        Path store = dir.resolve("peer-tls.p12");
         Files.createDirectory(store);
         Files.writeString(store.resolve("keep"), "x");
-        Path pass = dir.resolve("agent-tls.pass");
+        Path pass = dir.resolve("peer-tls.pass");
         assertThatThrownBy(() -> new DeviceTlsCert(store, pass).loadOrCreate())
                 .isInstanceOf(IllegalStateException.class);
         assertThat(Files.isDirectory(store)).isTrue();
@@ -43,8 +43,8 @@ class DeviceTlsCertTest {
 
     @Test
     void loadHardensDefaultPermissions() throws IOException {
-        Path store = dir.resolve("agent-tls.p12");
-        Path pass = dir.resolve("agent-tls.pass");
+        Path store = dir.resolve("peer-tls.p12");
+        Path pass = dir.resolve("peer-tls.pass");
         new DeviceTlsCert(store, pass).loadOrCreate();
         byte[] storeBytes = Files.readAllBytes(store);
         byte[] passBytes = Files.readAllBytes(pass);
@@ -59,8 +59,8 @@ class DeviceTlsCertTest {
 
     @Test
     void leftoverPassCreatesBoth() throws IOException {
-        Path store = dir.resolve("agent-tls.p12");
-        Path pass = dir.resolve("agent-tls.pass");
+        Path store = dir.resolve("peer-tls.p12");
+        Path pass = dir.resolve("peer-tls.pass");
         Files.writeString(pass, "stale");
         DeviceTlsCert created = new DeviceTlsCert(store, pass);
         created.loadOrCreate();
@@ -71,8 +71,8 @@ class DeviceTlsCertTest {
 
     @Test
     void markerWithoutPassFails() throws IOException {
-        Path store = dir.resolve("agent-tls.p12");
-        Path pass = dir.resolve("agent-tls.pass");
+        Path store = dir.resolve("peer-tls.p12");
+        Path pass = dir.resolve("peer-tls.pass");
         Files.write(store, new byte[] {1, 2, 3});
         assertThatThrownBy(() -> new DeviceTlsCert(store, pass).loadOrCreate())
                 .isInstanceOf(IllegalStateException.class)
@@ -83,8 +83,8 @@ class DeviceTlsCertTest {
 
     @Test
     void missingAliasFailsAsCorrupt() throws Exception {
-        Path store = dir.resolve("agent-tls.p12");
-        Path pass = dir.resolve("agent-tls.pass");
+        Path store = dir.resolve("peer-tls.p12");
+        Path pass = dir.resolve("peer-tls.pass");
         String passText = "test-pass";
         Files.writeString(pass, passText);
         KeyStore ks = KeyStore.getInstance("PKCS12");

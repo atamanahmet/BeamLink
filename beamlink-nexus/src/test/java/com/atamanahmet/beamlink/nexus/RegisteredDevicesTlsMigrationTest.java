@@ -16,7 +16,7 @@ class RegisteredDevicesTlsMigrationTest {
 
     @Test
     void v9KeepsExistingRowsAndAcceptsNullTlsColumns() throws Exception {
-        Path tempDb = Files.createTempFile("beamlink-nexus-agent-tls-v9-", ".db");
+        Path tempDb = Files.createTempFile("beamlink-nexus-peer-tls-v9-", ".db");
         Files.deleteIfExists(tempDb);
         String url = "jdbc:sqlite:" + tempDb.toAbsolutePath();
 

@@ -42,7 +42,7 @@ class DeviceSecurityChainTest {
             Files.createDirectories(runtimeDir.resolve("data/database"));
             Files.createDirectories(runtimeDir.resolve("data/uploads"));
             Files.createDirectories(runtimeDir.resolve("logs"));
-            dbFile = runtimeDir.resolve("data/database/agent-sec.db");
+            dbFile = runtimeDir.resolve("data/database/peer-sec.db");
             System.setProperty("beamlink.runtime.dir", runtimeDir.toAbsolutePath().toString());
         } catch (IOException e) {
             throw new ExceptionInInitializerError(e);
