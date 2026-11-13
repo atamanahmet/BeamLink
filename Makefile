@@ -4,7 +4,7 @@
 #
 # build pipeline:  setup-jre -> Maven -> copy JAR + .env -> npm run dist -> copy installer
 # dev pipeline:    setup-jre -> Maven -> copy JAR + .env -> npm run dev
-# test pipeline:   frontend (typecheck, build, lint, vitest) -> nexus mvn -> agent mvn -> android unit
+# test pipeline:   frontend (typecheck, build, lint, vitest) -> nexus mvn -> peer mvn -> android unit
 # apk pipeline:    check phone -> cap:sync -> gradlew assembleDebug -> adb install
 #
 # Usage:
@@ -13,12 +13,12 @@
 #
 #   make build          Production build for both modules
 #   make build-nexus    Production build for Beamlink Nexus only
-#   make build-agent    Production build for Beamlink Peer only
+#   make build-peer     Production build for Beamlink Peer only
 #
 #   make dev-nexus                Run Nexus in dev mode (full Maven recompile)
 #   make dev-nexus-skip-maven     Run Nexus in dev mode (skip Maven, reuse existing JAR)
-#   make dev-agent                Run Agent in dev mode (full Maven recompile)
-#   make dev-agent-skip-maven     Run Agent in dev mode (skip Maven, reuse existing JAR)
+#   make dev-peer                 Run Peer in dev mode (full Maven recompile)
+#   make dev-peer-skip-maven      Run Peer in dev mode (skip Maven, reuse existing JAR)
 #
 #   make build-apk      Build the debug APK (no phone needed)
 #   make install-apk    Check the phone, build the debug APK and install it
@@ -26,7 +26,7 @@
 #   make test-all       Run every gate. Use make -k test-all to run all even if one fails
 #   make test-frontend  typecheck, build, lint, vitest
 #   make test-nexus     Maven clean test for Nexus
-#   make test-agent     Maven clean test for Agent
+#   make test-peer      Maven clean test for Peer
 #   make test-android   Android unit tests with a real count from fresh results
 #
 # Requirements:
@@ -116,14 +116,14 @@ endif
 ADOPTIUM_URL := https://api.adoptium.net/v3/binary/latest/$(JRE_VERSION)/ga/$(ADOPTIUM_OS)/$(ADOPTIUM_ARCH)/jre/hotspot/normal/eclipse
 
 # -- Phony targets ------------------------------------------------------------
-.PHONY: build build-nexus build-agent dev-nexus dev-agent setup-jre \
-        dev-nexus-skip-maven dev-agent-skip-maven \
+.PHONY: build build-nexus build-peer dev-nexus dev-peer setup-jre \
+        dev-nexus-skip-maven dev-peer-skip-maven \
         build-apk install-apk \
-        test-all test-frontend test-nexus test-agent test-android \
-        _maven-nexus _maven-agent \
-        _copy-nexus _copy-agent \
-        _dist-nexus _dist-agent \
-        _installer-nexus _installer-agent \
+        test-all test-frontend test-nexus test-peer test-android \
+        _maven-nexus _maven-peer \
+        _copy-nexus _copy-peer \
+        _dist-nexus _dist-peer \
+        _installer-nexus _installer-peer \
         _check-java _check-device _sync-apk _gradle-apk _install-apk \
         help
 
@@ -139,17 +139,17 @@ help:
 	@echo ""
 	@echo "  build                   Production build for both modules"
 	@echo "  build-nexus             Production build for Nexus only"
-	@echo "  build-agent             Production build for Agent only"
+	@echo "  build-peer              Production build for Peer only"
 	@echo ""
 	@echo "  dev-nexus               Run Nexus in dev mode (full Maven recompile)"
 	@echo "  dev-nexus-skip-maven    Run Nexus in dev mode (skip Maven)"
-	@echo "  dev-agent               Run Agent in dev mode (full Maven recompile)"
-	@echo "  dev-agent-skip-maven    Run Agent in dev mode (skip Maven)"
+	@echo "  dev-peer                Run Peer in dev mode (full Maven recompile)"
+	@echo "  dev-peer-skip-maven     Run Peer in dev mode (skip Maven)"
 	@echo ""
-	@echo "  test-all                Run every gate (frontend, nexus, agent, android)"
+	@echo "  test-all                Run every gate (frontend, nexus, peer, android)"
 	@echo "  test-frontend           typecheck, build, lint, vitest"
 	@echo "  test-nexus              Maven clean test for Nexus"
-	@echo "  test-agent              Maven clean test for Agent"
+	@echo "  test-peer               Maven clean test for Peer"
 	@echo "  test-android            Android unit tests with a real count"
 	@echo "  wipe-nexus-dev          Remove the dev nexus.db, wal, and shm files"
 	@echo ""
@@ -157,7 +157,7 @@ help:
 	@echo "  install-apk             Check the phone, build the debug APK and install it"
 	@echo ""
 	@echo "  Nexus UI:  http://localhost:5173"
-	@echo "  Agent UI:  http://localhost:5174"
+	@echo "  Peer UI:   http://localhost:5174"
 	@echo ""
 	@echo "  Backend logs (dev):"
 	@echo "    tail -f resources/nexus/logs/nexus.log"
@@ -202,7 +202,7 @@ setup-jre:
 		fi; \
 	fi
 
-build: build-nexus build-agent
+build: build-nexus build-peer
 	@echo ""
 	@echo "✓ All builds complete."
 
@@ -210,7 +210,7 @@ build-nexus: setup-jre _maven-nexus _copy-nexus _dist-nexus _installer-nexus
 	@echo ""
 	@echo "✓ Beamlink Nexus build complete."
 
-build-agent: setup-jre _maven-agent _copy-agent _dist-agent _installer-agent
+build-peer: setup-jre _maven-peer _copy-peer _dist-peer _installer-peer
 	@echo ""
 	@echo "✓ Beamlink Peer build complete."
 
@@ -220,9 +220,9 @@ dev-nexus: setup-jre _maven-nexus _copy-nexus
 	@echo "  Backend logs: tail -f resources/nexus/logs/nexus.log"
 	cd $(NEXUS_UI_DIR) && npm run dev
 
-dev-agent: setup-jre _maven-agent _copy-agent
+dev-peer: setup-jre _maven-peer _copy-peer
 	@echo ""
-	@echo "▸ Starting Agent in dev mode..."
+	@echo "▸ Starting Peer in dev mode..."
 	@echo "  Backend logs: tail -f resources/peer/logs/peer.log"
 	cd $(PEER_UI_DIR) && npm run dev
 
@@ -232,9 +232,9 @@ dev-nexus-skip-maven:
 	@echo "  Backend logs: tail -f resources/nexus/logs/nexus.log"
 	cd $(NEXUS_UI_DIR) && npm run dev
 
-dev-agent-skip-maven:
+dev-peer-skip-maven:
 	@echo ""
-	@echo "▸ Starting Agent in dev mode (skipping Maven)..."
+	@echo "▸ Starting Peer in dev mode (skipping Maven)..."
 	@echo "  Backend logs: tail -f resources/peer/logs/peer.log"
 	cd $(PEER_UI_DIR) && npm run dev
 
@@ -255,7 +255,7 @@ wipe-nexus-dev:
 	rm -f $(ROOT_DIR)/resources/nexus/data/database/nexus.db-shm
 
 # Gates. Each target stops on the first failure, use make -k test-all to see all of them
-test-all: test-frontend test-nexus test-agent test-android
+test-all: test-frontend test-nexus test-peer test-android
 	@echo ""
 	@echo "✓ All gates passed."
 
@@ -279,9 +279,9 @@ test-nexus:
 	@echo "▸ [nexus] Maven clean test"
 	cd $(NEXUS_JAVA_DIR) && mvn clean test
 
-test-agent:
+test-peer:
 	@echo ""
-	@echo "▸ [agent] Maven clean test"
+	@echo "▸ [peer] Maven clean test"
 	cd $(PEER_JAVA_DIR) && mvn clean test
 
 # cleanTestDebugUnitTest removes old result XML. The count prints even when tests fail, then make exits with the Gradle status
@@ -306,9 +306,9 @@ _maven-nexus:
 	@echo "▸ [nexus] Step 1 - Maven package"
 	cd $(NEXUS_JAVA_DIR) && mvn clean package -DskipTests
 
-_maven-agent:
+_maven-peer:
 	@echo ""
-	@echo "▸ [agent] Step 1 - Maven package"
+	@echo "▸ [peer] Step 1 - Maven package"
 	cd $(PEER_JAVA_DIR) && mvn clean package -DskipTests
 
 # Globs target/ so the version number in the JAR filename doesn't matter
@@ -331,9 +331,9 @@ _copy-nexus:
 	cp $(NEXUS_JAVA_DIR)/.env $(NEXUS_CONFIG)/.env
 	@echo "  ✓ .env -> resources/nexus/config/.env"
 
-_copy-agent:
+_copy-peer:
 	@echo ""
-	@echo "▸ [agent] Step 2 - Copy JAR and .env to resources"
+	@echo "▸ [peer] Step 2 - Copy JAR and .env to resources"
 	@mkdir -p $(PEER_BACKEND) $(PEER_CONFIG)
 	$(eval PEER_JAR := $(shell ls $(PEER_JAVA_DIR)/target/beamlink-peer-*.jar 2>/dev/null | head -1))
 	@if [ -z "$(PEER_JAR)" ]; then \
@@ -355,9 +355,9 @@ _dist-nexus:
 	@echo "▸ [nexus] Step 3 - Electron dist (npm run dist)"
 	cd $(NEXUS_UI_DIR) && npm run dist
 
-_dist-agent:
+_dist-peer:
 	@echo ""
-	@echo "▸ [agent] Step 3 - Electron dist (npm run dist)"
+	@echo "▸ [peer] Step 3 - Electron dist (npm run dist)"
 	cd $(PEER_UI_DIR) && npm run dist
 
 _installer-nexus:
@@ -371,9 +371,9 @@ _installer-nexus:
 	cp "$(NEXUS_INSTALLER)" "$(ROOT_DIR)/"
 	@echo "  ✓ Installer -> $$(basename $(NEXUS_INSTALLER))"
 
-_installer-agent:
+_installer-peer:
 	@echo ""
-	@echo "▸ [agent] Step 4 - Copy installer to root (OS: $(DETECTED_OS))"
+	@echo "▸ [peer] Step 4 - Copy installer to root (OS: $(DETECTED_OS))"
 	$(eval PEER_INSTALLER := $(shell ls $(PEER_UI_DIR)/dist/*.$(INSTALLER_EXT) 2>/dev/null | head -1))
 	@if [ -z "$(PEER_INSTALLER)" ]; then \
 		echo "✗ ERROR: No .$(INSTALLER_EXT) installer found in $(PEER_UI_DIR)/dist/"; \
