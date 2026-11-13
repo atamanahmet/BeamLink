@@ -5,7 +5,7 @@ package com.beamlink.peer.config
  */
 object DeviceDefaults {
 
-    /** Desktop device default from beamlink-peer application.yaml agent port. */
+    /** Desktop device default from beamlink-peer application.yaml peer port. */
     const val DEVICE_PORT = 9090
 
     /** Desktop TransferProperties.chunkSizeBytes default. */

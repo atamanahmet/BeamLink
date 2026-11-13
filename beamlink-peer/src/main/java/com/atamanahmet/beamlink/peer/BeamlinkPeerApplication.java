@@ -42,7 +42,7 @@ public class BeamlinkPeerApplication implements CommandLineRunner {
     @Override
     public void run(String... args) {
         System.out.println("========================================");
-        System.out.println("BEAMLINK AGENT STARTED");
+        System.out.println("BEAMLINK PEER STARTED");
         System.out.println("========================================");
         System.out.println("Device UI: http://"+ipAddress+":"+port);
         System.out.println("========================================");
