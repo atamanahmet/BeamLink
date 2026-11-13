@@ -16,7 +16,6 @@ target/
 /beamlink-peer/logs/
 /beamlink-peer/data/
 /nexus.log
-/agent-info.json
 
 # ── Resources - populated by make build, never committed ──────────
 # Root-only: do not ignore **/src/main/resources (Flyway, yaml).
@@ -26,6 +25,11 @@ target/
 node_modules/
 dist/
 beamlink-peer-dist/
+*.apk
+*.aab
+
+# ── Runtime JSON ─────────────────────────────────────────
+*-runtime.json
 
 # ── Secrets ───────────────────────────────────────────────────────
 .env
