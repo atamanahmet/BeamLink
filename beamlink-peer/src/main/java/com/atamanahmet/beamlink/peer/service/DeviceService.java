@@ -4,11 +4,9 @@ import com.atamanahmet.beamlink.peer.config.DeviceConfig;
 import com.atamanahmet.beamlink.peer.config.NexusAddressHolder;
 import com.atamanahmet.beamlink.peer.domain.Device;
 import com.atamanahmet.beamlink.peer.domain.enums.DeviceState;
-import com.atamanahmet.beamlink.peer.dto.DeviceIdentityResponse;
 import com.atamanahmet.beamlink.peer.dto.DeviceRenameRequest;
 import com.atamanahmet.beamlink.peer.dto.DeviceStatusDTO;
 import com.atamanahmet.beamlink.peer.event.DeviceApprovedEvent;
-import com.atamanahmet.beamlink.peer.event.DeviceIdentityChangedEvent;
 import com.atamanahmet.beamlink.peer.exception.NexusOfflineException;
 import com.atamanahmet.beamlink.peer.repository.DeviceRepository;
 import jakarta.annotation.PostConstruct;
@@ -156,37 +154,6 @@ public class DeviceService {
         persist();
         log.info("Device approved. Name={}, DeviceId={}", device.getDeviceName(), device.getDeviceId());
         eventPublisher.publishEvent(new DeviceApprovedEvent(this));
-    }
-
-    /**
-     * Applies public facts from identify. Tokens come only from /token poll.
-     */
-    public synchronized void applyNexusIdentity(DeviceIdentityResponse response) {
-        boolean identityChanged = !response.getDeviceId().equals(device.getDeviceId())
-                || !response.getDeviceName().equals(device.getDeviceName())
-                || !Objects.equals(response.getPublicId(), device.getPublicId())
-                || response.getState() != device.getState();
-
-        device.setDeviceId(response.getDeviceId());
-        device.setDeviceName(response.getDeviceName());
-        device.setPublicId(response.getPublicId());
-        DeviceState next = response.getState();
-        if (next == DeviceState.APPROVED && device.getAuthToken() == null) {
-            next = DeviceState.PENDING_APPROVAL;
-        }
-        device.setState(next);
-
-        if (response.getNexusPublicKey() != null) {
-            device.setNexusPublicKey(response.getNexusPublicKey());
-        }
-
-        persist();
-        log.info("Identity applied. Name={}, DeviceId={}, changed={}",
-                device.getDeviceName(), device.getDeviceId(), identityChanged);
-
-        if (identityChanged) {
-            eventPublisher.publishEvent(new DeviceIdentityChangedEvent(this));
-        }
     }
 
     public void requestRename(UUID deviceId, String newName) {
