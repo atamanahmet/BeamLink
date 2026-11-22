@@ -44,7 +44,6 @@ public class SecurityConfig {
             "/api/devices/token",
             "/api/devices/status",
             "/api/devices/ping",
-            "/api/devices/identify",
             "/api/devices/*/exists",
             "/ws/devices"
     };

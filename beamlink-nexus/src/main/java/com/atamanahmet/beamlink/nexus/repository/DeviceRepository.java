@@ -24,8 +24,6 @@ public interface DeviceRepository extends JpaRepository<Device, UUID>{
 
     Optional<Device> findByPublicId(UUID publicId);
 
-    Optional<Device> findByIpAddressAndPort(String ipAddress, int port);
-
     Optional<Device> findByIpAddressAndTlsPort(String ipAddress, Integer tlsPort);
 
     boolean existsByName(String deviceName);

@@ -43,10 +43,6 @@ public class DeviceService {
         return deviceRepository.save(device);
     }
 
-    public Optional<Device> getByIpAddressAndPort(String ipAddress, int port) {
-        return deviceRepository.findByIpAddressAndPort(ipAddress, port);
-    }
-
     @Transactional
     public DeviceStatusResponse updateDeviceStatus(DeviceStatusRequest request) {
         StatusUpdatePayload payload = StatusUpdatePayload.builder()

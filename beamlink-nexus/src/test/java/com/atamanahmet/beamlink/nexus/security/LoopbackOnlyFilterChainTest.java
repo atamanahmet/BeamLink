@@ -79,6 +79,15 @@ class LoopbackOnlyFilterChainTest {
                 .andExpect(status().isUnauthorized());
     }
 
+    @Test
+    void remoteIdentifyWithoutAuthIsUnauthorized() throws Exception {
+        mvc.perform(get("/api/devices/identify")
+                        .param("ipAddress", "10.0.0.8")
+                        .param("port", "9090")
+                        .with(remote("192.168.1.20")))
+                .andExpect(status().isUnauthorized());
+    }
+
     /**
      * Sets the TCP remote address on the mock request.
      */

@@ -1,7 +1,5 @@
 package com.atamanahmet.beamlink.nexus.controller;
 
-import com.atamanahmet.beamlink.nexus.domain.enums.DeviceState;
-import com.atamanahmet.beamlink.nexus.dto.DeviceIdentityResponse;
 import com.atamanahmet.beamlink.nexus.dto.DevicePingResponse;
 import com.atamanahmet.beamlink.nexus.dto.DeviceRegistrationRequest;
 import com.atamanahmet.beamlink.nexus.dto.DeviceRegistrationResponse;
@@ -11,8 +9,6 @@ import com.atamanahmet.beamlink.nexus.dto.DeviceChallengeRequest;
 import com.atamanahmet.beamlink.nexus.dto.DeviceChallengeResponse;
 import com.atamanahmet.beamlink.nexus.dto.DeviceTokenRequest;
 import com.atamanahmet.beamlink.nexus.dto.EnrollmentErrorBody;
-import com.atamanahmet.beamlink.nexus.config.RsaKeyConfig;
-import com.atamanahmet.beamlink.nexus.security.LoopbackAddresses;
 import com.atamanahmet.beamlink.nexus.service.DeviceService;
 import com.atamanahmet.beamlink.nexus.service.DeviceEnrollmentService;
 import com.atamanahmet.beamlink.nexus.service.EnrollmentThrottle;
@@ -40,7 +36,6 @@ public class DeviceController {
         private final DeviceEnrollmentService deviceEnrollmentService;
         private final EnrollmentThrottle enrollmentThrottle;
         private final NexusResumePolicyStore resumePolicyStore;
-        private final RsaKeyConfig rsaKeyConfig;
         private final DeviceWebSocketHandler deviceWebSocketHandler;
 
         /**
@@ -162,42 +157,6 @@ public class DeviceController {
         public ResponseEntity<DevicePingResponse> ping() {
                 return ResponseEntity.ok(
                                 new DevicePingResponse(resumePolicyStore.getMode().name()));
-        }
-
-        /**
-         * Device identity lookup by ip:port. Public facts only. No tokens.
-         */
-        @GetMapping("/identify")
-        public ResponseEntity<?> identify(
-                        @RequestParam String ipAddress,
-                        @RequestParam int port,
-                        HttpServletRequest request) {
-                if (!LoopbackAddresses.sourceMatchesClaimed(ipAddress, request.getRemoteAddr())) {
-                        return ResponseEntity.status(HttpStatus.FORBIDDEN).body(
-                                ProblemDetails.of(
-                                        HttpStatus.FORBIDDEN,
-                                        "Forbidden",
-                                        "Source address does not match claim",
-                                        "FORBIDDEN",
-                                        ErrorReason.UNKNOWN));
-                }
-
-                return deviceService.getByIpAddressAndPort(ipAddress, port)
-                        .<ResponseEntity<?>>map(device -> ResponseEntity.ok(DeviceIdentityResponse.builder()
-                                .deviceId(device.getId())
-                                .deviceName(device.getName())
-                                .state(device.getState())
-                                .publicId(device.getPublicId())
-                                .nexusPublicKey(device.getState() == DeviceState.APPROVED
-                                                ? rsaKeyConfig.getPublicKeyBase64() : null)
-                                .build()))
-                        .orElse(ResponseEntity.status(HttpStatus.NOT_FOUND).body(
-                                ProblemDetails.of(
-                                        HttpStatus.NOT_FOUND,
-                                        "Not found",
-                                        "Device not found",
-                                        "NOT_FOUND",
-                                        ErrorReason.UNKNOWN)));
         }
 
         /**
