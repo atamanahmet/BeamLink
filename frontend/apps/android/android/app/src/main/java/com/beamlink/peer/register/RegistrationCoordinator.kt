@@ -160,16 +160,9 @@ class RegistrationCoordinator(
     }
 
     /**
-     * Starts token polling when pending.
+     * Stops enrollment token polling.
      */
-    fun startIdentifyPoll() {
-        applyPollOwner(EnrollmentPollOwnerRule.Command.START)
-    }
-
-    /**
-     * Stops token polling.
-     */
-    fun stopIdentifyPoll() {
+    fun stopEnrollmentPoll() {
         applyPollOwner(EnrollmentPollOwnerRule.Command.STOP)
     }
 

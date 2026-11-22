@@ -31,9 +31,6 @@ object DeviceDefaults {
      */
     const val READ_TIMEOUT_MS = 60_000L
 
-    /** Poll identify while the registration screen is open. */
-    const val IDENTIFY_POLL_INTERVAL_MS = 2000L
-
     /** Desktop TransferConstants.CHUNK_SHA256_HEADER. */
     const val CHUNK_SHA256_HEADER = "X-Chunk-SHA256"
 

@@ -39,8 +39,6 @@ type BeamlinkNative = {
   register(): Promise<void>;
   reRegister(): Promise<void>;
   resetDevice(): Promise<void>;
-  startIdentifyPoll(): Promise<void>;
-  stopIdentifyPoll(): Promise<void>;
   getPeers(): Promise<{ peers: PeerSummary[] }>;
   pickFiles(): Promise<{ files: SharedFileItem[] }>;
   sendFiles(options: {

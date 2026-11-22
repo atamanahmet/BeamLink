@@ -286,24 +286,6 @@ class BeamlinkPlugin : Plugin() {
     }
 
     /**
-     * Starts identify polling when pending.
-     */
-    @PluginMethod
-    fun startIdentifyPoll(call: PluginCall) {
-        AppGraph.registration.startIdentifyPoll()
-        call.resolve()
-    }
-
-    /**
-     * Stops identify polling.
-     */
-    @PluginMethod
-    fun stopIdentifyPoll(call: PluginCall) {
-        AppGraph.registration.stopIdentifyPoll()
-        call.resolve()
-    }
-
-    /**
      * Fetches peer summaries and filters out self by deviceId.
      */
     @PluginMethod

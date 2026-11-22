@@ -4,20 +4,11 @@ import com.beamlink.peer.config.DeviceDefaults
 import org.json.JSONObject
 
 /**
- * Nexus identify and peer summary calls.
+ * Nexus peer summary calls.
  */
 class NexusClient(
     private val http: HttpJsonClient = HttpJsonClient(),
 ) {
-
-    data class IdentifyResult(
-        val deviceId: String,
-        val deviceName: String,
-        val state: String,
-        val publicId: String?,
-        val nexusPublicKey: String? = null,
-        val notFound: Boolean,
-    )
 
     data class PeerSummary(
         val id: String,
@@ -28,39 +19,6 @@ class NexusClient(
         val tlsPort: Int? = null,
         val tlsFingerprint: String? = null,
     )
-
-    /**
-     * GET /api/devices/identify?ipAddress=&port=. No nonce. 404 => notFound.
-     */
-    fun identify(nexusBaseUrl: String, ipAddress: String, port: Int): IdentifyResult {
-        val base = AddressGuard.requireAllowedNexusUrl(nexusBaseUrl).toString().trimEnd('/')
-        val url = "$base/api/devices/identify?ipAddress=${encode(ipAddress)}&port=$port"
-        val response = http.get(
-            url,
-            timeoutMs = (DeviceDefaults.REQUEST_TIMEOUT_SECONDS * 1000).toInt(),
-        )
-        if (response.status == 404) {
-            return IdentifyResult("", "", "", null, null, notFound = true)
-        }
-        if (response.status !in 200..299) {
-            throw IllegalStateException(ProblemBody.userText(response.body, response.status))
-        }
-        val json = HttpJsonClient.parseObject(response.body)
-        return IdentifyResult(
-            deviceId = json.getString("deviceId"),
-            deviceName = json.optString("deviceName", ""),
-            state = json.optString("state", ""),
-            publicId = stringOrNull(json, "publicId"),
-            nexusPublicKey = stringOrNull(json, "nexusPublicKey"),
-            notFound = false,
-        )
-    }
-
-    private fun stringOrNull(json: JSONObject, key: String): String? {
-        if (!json.has(key) || json.isNull(key)) return null
-        val value = json.optString(key, "")
-        return value.takeIf { it.isNotBlank() }
-    }
 
     /**
      * GET /api/nexus/peers with X-Auth-Token public token. TLS fields on APPROVED peers.
@@ -95,14 +53,16 @@ class NexusClient(
         return out
     }
 
+    private fun stringOrNull(json: JSONObject, key: String): String? {
+        if (!json.has(key) || json.isNull(key)) return null
+        val value = json.optString(key, "")
+        return value.takeIf { it.isNotBlank() }
+    }
+
     private fun intOrNull(json: JSONObject, key: String): Int? {
         if (!json.has(key) || json.isNull(key)) return null
         val value = json.optInt(key, 0)
         return value.takeIf { it > 0 }
-    }
-
-    private fun encode(value: String): String {
-        return java.net.URLEncoder.encode(value, Charsets.UTF_8.name())
     }
 
 }

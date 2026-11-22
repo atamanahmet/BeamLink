@@ -26,7 +26,7 @@ class DeviceReset(
      */
     fun run(app: Context) {
         coordinator.cancelEnrollAndJoin()
-        coordinator.stopIdentifyPoll()
+        coordinator.stopEnrollmentPoll()
         try {
             receiveServer.stop()
         } catch (_: Exception) {
