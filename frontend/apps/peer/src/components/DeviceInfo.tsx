@@ -9,7 +9,12 @@ import {
   Title,
 } from "@mantine/core";
 import { DEVICE_KEY_LABEL, problemFromUnknown } from "@beamlink/core";
-import { ConnectBanner, ErrorWithRef, useConnectOpen } from "@beamlink/features";
+import {
+  ConnectBanner,
+  ErrorWithRef,
+  FingerprintText,
+  useConnectOpen,
+} from "@beamlink/features";
 import { requestRename } from "../api/deviceApi";
 import { useDeviceStatusStore } from "../store/deviceStatusStore";
 
@@ -164,14 +169,12 @@ export const DeviceInfo = () => {
           </Text>
         </div>
 
-        <div>
-          <Text size="sm" c="var(--bl-primary-text)" mb={4}>
-            {DEVICE_KEY_LABEL}
-          </Text>
-          <Text size="sm" ff="monospace" c="var(--bl-text-secondary)">
-            {deviceStatus.fingerprint ?? ""}
-          </Text>
-        </div>
+        {deviceStatus.fingerprint ? (
+          <FingerprintText
+            label={DEVICE_KEY_LABEL}
+            value={deviceStatus.fingerprint}
+          />
+        ) : null}
 
         <div>
           <Text size="sm" c="var(--bl-primary-text)" mb={4}>

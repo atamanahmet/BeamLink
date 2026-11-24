@@ -2,11 +2,13 @@ import { useEffect, useState } from "react";
 import { Outlet } from "react-router";
 import { Text } from "@mantine/core";
 import { QueryClientProvider } from "@tanstack/react-query";
+import { FirstRunHost } from "@beamlink/features";
 import { usePlatform } from "@beamlink/platform";
 import icon from "../assets/icon.png";
 import StartupScreen from "./components/StartupScreen";
 import { setApiBaseUrl } from "./api/client";
 import { getDeviceStatus } from "./api/deviceApi";
+import { settingsApi } from "./api/settingsApi";
 import { usePeerSse } from "./hooks/usePeerSse";
 import { queryClient } from "./queryClient";
 import { useDeviceStatusStore } from "./store/deviceStatusStore";
@@ -105,6 +107,10 @@ function App() {
           </Text>
         </div>
         <Outlet />
+        <FirstRunHost
+          settingsApi={settingsApi}
+          includeResumePolicy={false}
+        />
       </div>
     </QueryClientProvider>
   );

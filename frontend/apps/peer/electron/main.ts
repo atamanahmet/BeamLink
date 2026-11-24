@@ -9,6 +9,7 @@ import {
   session,
 } from "electron";
 import {
+  createAutostart,
   isExactAppSenderUrl,
   isHexColor,
   readSavedWindowTheme,
@@ -46,6 +47,27 @@ const APP_SENDER: AppSenderGuardOptions = {
 const DEVICE_UI_SECRET = randomBytes(32).toString("hex");
 
 registerFileHandlers(ipcMain, APP_SENDER);
+
+const autostart = createAutostart(app, {
+  appId: "com.beamlink.peer",
+  displayName: "Beamlink Peer",
+  desktopFileName: "beamlink-peer.desktop",
+});
+
+ipcMain.handle("autostart:get", (event) => {
+  const bad = rejectNonAppSender(event, APP_SENDER);
+  if (bad) return bad;
+  return autostart.getAutostart();
+});
+
+ipcMain.handle("autostart:set", (event, enabled: unknown) => {
+  const bad = rejectNonAppSender(event, APP_SENDER);
+  if (bad) return bad;
+  if (typeof enabled !== "boolean") {
+    return { ok: false as const, code: "INVALID_AUTOSTART" };
+  }
+  return autostart.setAutostart(enabled);
+});
 
 /**
  * Injects the UI secret on requests to the local device or Vite proxy.
@@ -306,6 +328,9 @@ function createWindow() {
       if (process.platform === "darwin") app.dock?.hide();
     }
   });
+  mainWindow.on("session-end", () => {
+    isQuitting = true;
+  });
 }
 
 if (!app.requestSingleInstanceLock()) {
@@ -354,9 +379,13 @@ app.whenReady().then(async () => {
 
   createWindow();
   createTray();
+  autostart.syncLinuxDesktopExec();
 
   // Show window immediately so StartupScreen is visible while backend starts
   mainWindow?.once("ready-to-show", () => {
+    if (process.argv.includes("--hidden")) {
+      return;
+    }
     mainWindow?.show();
     mainWindow?.focus();
     if (process.platform === "darwin") app.dock?.show();

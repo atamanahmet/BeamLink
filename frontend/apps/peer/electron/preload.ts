@@ -64,4 +64,9 @@ contextBridge.exposeInMainWorld("electronAPI", {
     ipcRenderer.invoke("window:set-theme", colors),
 
   showWindow: () => ipcRenderer.invoke("window:show"),
+
+  getAutostart: () => ipcRenderer.invoke("autostart:get"),
+
+  setAutostart: (enabled: boolean) =>
+    ipcRenderer.invoke("autostart:set", enabled),
 });
