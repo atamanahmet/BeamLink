@@ -24,6 +24,10 @@ export const settingsApi: SettingsApi = {
 
   putMinFreeSpace: async () => {},
 
+  getFirstRunCompleted: async () => ({ value: true }),
+
+  putFirstRunCompleted: async () => {},
+
   openUploadsFolder: async () => {},
 
   openLogs: async () => {},
