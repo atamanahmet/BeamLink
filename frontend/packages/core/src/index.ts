@@ -67,6 +67,11 @@ export type {
 /**
  * Feature flags the shared UI reads. Adapters set these; components do not branch on OS.
  */
+export type AutostartStatus = {
+  supported: boolean;
+  enabled: boolean;
+};
+
 export type PlatformCapabilities = {
   /** Edit an existing theme definition. Selection stays separate. */
   themeEdit: boolean;
@@ -78,6 +83,8 @@ export type PlatformCapabilities = {
   transferLogs: boolean;
   /** Warp background effect. */
   warp: boolean;
+  /** OS login-item or desktop autostart APIs. */
+  autostart: boolean;
 };
 
 export type SharedFileItem = {
@@ -132,6 +139,14 @@ export type Platform = {
     background: string;
     foreground: string;
   }) => Promise<void>;
+  /**
+   * Reads whether the OS supports and enables autostart.
+   */
+  getAutostart: () => Promise<AutostartStatus>;
+  /**
+   * Enables or disables OS autostart.
+   */
+  setAutostart: (enabled: boolean) => Promise<AutostartStatus>;
   /**
    * Subscribe to native share payloads. Returns unsubscribe.
    */

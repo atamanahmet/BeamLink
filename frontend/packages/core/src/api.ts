@@ -126,6 +126,8 @@ export interface SettingsApi {
   putResumePolicy: (value: ResumePolicyMode) => Promise<void>;
   getMinFreeSpace: () => Promise<{ value: number }>;
   putMinFreeSpace: (value: number) => Promise<void>;
+  getFirstRunCompleted: () => Promise<{ value: boolean }>;
+  putFirstRunCompleted: (value: boolean) => Promise<void>;
   getLanAddresses?: () => Promise<LanAddressesResponse>;
   openUploadsFolder: () => Promise<void>;
   openLogs: () => Promise<void>;
