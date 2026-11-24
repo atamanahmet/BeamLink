@@ -34,13 +34,19 @@ public final class PinnedLeafTrust extends X509ExtendedTrustManager {
         if (stored == null || stored.isBlank()) {
             throw new CertificateException(missingMessage);
         }
+        String expected;
+        try {
+            expected = NexusTlsFingerprint.canonicalize(stored);
+        } catch (IllegalArgumentException e) {
+            throw new CertificateException(missingMessage);
+        }
         if (chain == null || chain.length == 0) {
             throw new CertificateException("empty certificate chain");
         }
         String seen = NexusTlsFingerprint.of(chain[0]);
-        if (!stored.equals(seen)) {
+        if (!expected.equals(seen)) {
             throw new CertificateException(
-                    mismatchMessage + " expected=" + stored + " seen=" + seen);
+                    mismatchMessage + " expected=" + expected + " seen=" + seen);
         }
     }
 

@@ -124,7 +124,7 @@ class DeviceSignatureVerifierTest {
                         sig,
                         TLS_FINGERPRINT,
                         TLS_PORT,
-                        "ffff eeee dddd cccc bbbb aaaa 1111 0000"))
+                        "ffffeeeebbbbccccddddeeeeaaaa1111000022223333444455556666777788889999"))
                 .isFalse();
     }
 
@@ -141,8 +141,9 @@ class DeviceSignatureVerifierTest {
      */
     @Test
     void spacedDisplayLeafSignatureFailsCanonicalVerify() throws Exception {
-        String display = "bbbb cccc dddd eeee ffff 0000 1111 2222";
-        String canonical = "bbbbccccddddeeeeffff000011112222";
+        String display =
+                "bbbb cccc dddd eeee ffff 0000 1111 2222 3333 4444 5555 6666 7777 8888 9999 aaaa bbbb";
+        String canonical = NEXUS_LEAF;
         Signature signer = Signature.getInstance("SHA256withECDSA");
         signer.initSign(pair.getPrivate());
         signer.update(DeviceSignatureVerifier.signedMessage(
@@ -153,7 +154,9 @@ class DeviceSignatureVerifierTest {
                 .isFalse();
     }
 
-    private static final String TLS_FINGERPRINT = "aaaa bbbb cccc dddd eeee ffff 0000 1111";
+    private static final String TLS_FINGERPRINT =
+            "aaaabbbbccccddddeeeeffff0000111122223333444455556666777788889999";
     private static final Integer TLS_PORT = 9091;
-    private static final String NEXUS_LEAF = "bbbb cccc dddd eeee ffff 0000 1111 2222";
+    private static final String NEXUS_LEAF =
+            "bbbbccccddddeeeeffff0000111122223333444455556666777788889999aaaabbbb";
 }

@@ -32,7 +32,10 @@ import static org.mockito.Mockito.when;
 class DeviceEnrollmentServiceTest {
 
     private static final byte[] LEAF_DER = new byte[]{1, 2, 3, 4};
-    private static final String WRONG_LEAF = "ffff eeee dddd cccc bbbb aaaa 1111 0000";
+    private static final String WRONG_LEAF =
+            "ffffeeeebbbbccccddddeeeeaaaa1111000022223333444455556666777788889999";
+    private static final String DEVICE_TLS =
+            "aaaabbbbccccddddeeeeffff0000111122223333444455556666777788889999";
     private static KeyPair pair;
     private static String publicB64;
     private static String ownLeaf;
@@ -43,7 +46,13 @@ class DeviceEnrollmentServiceTest {
         gen.initialize(new ECGenParameterSpec("secp256r1"));
         pair = gen.generateKeyPair();
         publicB64 = Base64.getEncoder().encodeToString(pair.getPublic().getEncoded());
-        ownLeaf = DeviceSignatureVerifier.canonicalFingerprint(LEAF_DER);
+        java.security.MessageDigest md = java.security.MessageDigest.getInstance("SHA-256");
+        byte[] hash = md.digest(LEAF_DER);
+        StringBuilder hex = new StringBuilder();
+        for (byte b : hash) {
+            hex.append(String.format("%02x", b));
+        }
+        ownLeaf = hex.toString();
     }
 
     @Test
@@ -57,8 +66,8 @@ class DeviceEnrollmentServiceTest {
                 mock(RsaKeyConfig.class),
                 mock(NexusTlsCert.class));
 
-        String honest = "aaaa bbbb cccc dddd eeee ffff 0000 1111";
-        String tampered = "ffff eeee dddd cccc bbbb aaaa 1111 0000";
+        String honest = DEVICE_TLS;
+        String tampered = WRONG_LEAF;
         Signature signer = Signature.getInstance("SHA256withECDSA");
         signer.initSign(pair.getPrivate());
         signer.update(DeviceSignatureVerifier.signedRegisterMessage(publicB64, honest, 9091));
@@ -82,8 +91,8 @@ class DeviceEnrollmentServiceTest {
     @Test
     void tokenRejectsTamperedTlsFingerprintOrPort() throws Exception {
         TokenSetup setup = approvedSetup();
-        String honestFp = "aaaa bbbb cccc dddd eeee ffff 0000 1111";
-        String tamperedFp = "ffff eeee dddd cccc bbbb aaaa 1111 0000";
+        String honestFp = DEVICE_TLS;
+        String tamperedFp = WRONG_LEAF;
         String sig = signToken(setup.deviceId.toString(), setup.challenge, honestFp, 9091, ownLeaf);
 
         DeviceEnrollmentService.TokenPollResult result = setup.service.token(
@@ -108,7 +117,8 @@ class DeviceEnrollmentServiceTest {
         DeviceEnrollmentService service = new DeviceEnrollmentService(
                 setup.devices, setup.store, tokens, rsa, tlsCert());
 
-        String nextFp = "1111 2222 3333 4444 5555 6666 7777 8888";
+        String nextFp =
+                "111122223333444455556666777788889999aaaabbbbccccddddeeeeffff00001111";
         int nextPort = 9092;
         String sig = signToken(setup.deviceId.toString(), setup.challenge, nextFp, nextPort, ownLeaf);
 
@@ -209,7 +219,7 @@ class DeviceEnrollmentServiceTest {
     private static TokenSetup approvedSetup() {
         UUID deviceId = UUID.fromString("11111111-1111-1111-1111-111111111111");
         UUID publicId = UUID.fromString("22222222-2222-2222-2222-222222222222");
-        Device device = approvedDevice(deviceId, publicId, "aaaa bbbb cccc dddd eeee ffff 0000 1111", 9091);
+        Device device = approvedDevice(deviceId, publicId, DEVICE_TLS, 9091);
         DeviceService devices = mock(DeviceService.class);
         when(devices.findOptional(deviceId)).thenReturn(Optional.of(device));
         when(devices.saveDevice(any())).thenAnswer(inv -> inv.getArgument(0));
