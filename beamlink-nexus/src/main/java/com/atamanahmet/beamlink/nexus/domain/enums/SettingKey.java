@@ -14,12 +14,14 @@ public enum SettingKey {
     TRANSFER_SPEED_CAP_MBPS(SettingType.DOUBLE, null, null, null),
     TOTAL_SPEED_LIMIT_MBPS(SettingType.DOUBLE, null, null, null),
     TRANSFER_RESUME_POLICY(SettingType.STRING, null, null, null),
-    MIN_FREE_SPACE_BYTES(SettingType.LONG, "1073741824", 268435456L, 1099511627776L);
+    MIN_FREE_SPACE_BYTES(SettingType.LONG, "1073741824", 268435456L, 1099511627776L),
+    FIRST_RUN_COMPLETED(SettingType.BOOLEAN, "false", null, null);
 
     public enum SettingType {
         STRING,
         DOUBLE,
-        LONG
+        LONG,
+        BOOLEAN
     }
 
     private final SettingType type;
@@ -60,6 +62,12 @@ public enum SettingKey {
         if (type == SettingType.STRING) {
             return;
         }
+        if (type == SettingType.BOOLEAN) {
+            if (!"true".equals(raw) && !"false".equals(raw)) {
+                throw invalid();
+            }
+            return;
+        }
         if (type == SettingType.LONG) {
             long n;
             try {
@@ -72,15 +80,19 @@ public enum SettingKey {
             }
             return;
         }
-        double n;
-        try {
-            n = Double.parseDouble(raw.trim());
-        } catch (NumberFormatException e) {
-            throw invalid();
+        if (type == SettingType.DOUBLE) {
+            double n;
+            try {
+                n = Double.parseDouble(raw.trim());
+            } catch (NumberFormatException e) {
+                throw invalid();
+            }
+            if ((min != null && n < min) || (max != null && n > max)) {
+                throw invalid();
+            }
+            return;
         }
-        if ((min != null && n < min) || (max != null && n > max)) {
-            throw invalid();
-        }
+        throw invalid();
     }
 
     private InvalidRequestException invalid() {

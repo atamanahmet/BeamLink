@@ -196,6 +196,40 @@ class ProblemDetailMvcTest {
     }
 
     @Test
+    void firstRunCompletedStringBodyIsBadRequestProblemJson() throws Exception {
+        MockMvc settingsMvc = mvcFor(new SettingsController(
+                mock(SettingsService.class),
+                mock(SpeedLimitSettingsCache.class),
+                mock(NexusResumePolicyStore.class),
+                mock(DiskReserveProvider.class),
+                mock(NexusConfig.class)));
+        settingsMvc.perform(put("/api/nexus/settings/first-run-completed")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"value\":\"true\"}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("INVALID_SETTING"))
+                .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_PROBLEM_JSON));
+    }
+
+    @Test
+    void firstRunCompletedCorruptGetIsBadRequestProblemJson() throws Exception {
+        SettingsService settings = mock(SettingsService.class);
+        doThrow(new InvalidRequestException("Invalid setting value", "INVALID_SETTING"))
+                .when(settings)
+                .getBoolean(any());
+        MockMvc settingsMvc = mvcFor(new SettingsController(
+                settings,
+                mock(SpeedLimitSettingsCache.class),
+                mock(NexusResumePolicyStore.class),
+                mock(DiskReserveProvider.class),
+                mock(NexusConfig.class)));
+        settingsMvc.perform(get("/api/nexus/settings/first-run-completed"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("INVALID_SETTING"))
+                .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_PROBLEM_JSON));
+    }
+
+    @Test
     void loginBadSessionDaysIsBadRequestProblemJson() throws Exception {
         MockMvc authMvc = mvcFor(new NexusAuthController(
                 mock(NexusAuthService.class),

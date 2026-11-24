@@ -121,6 +121,35 @@ public class SettingsController {
         return ResponseEntity.ok(Map.of("value", diskReserveProvider.getBytes()));
     }
 
+    @GetMapping("/first-run-completed")
+    public ResponseEntity<Map<String, Object>> getFirstRunCompleted() {
+        return ResponseEntity.ok(Map.of(
+                "value", settingsService.getBoolean(SettingKey.FIRST_RUN_COMPLETED)));
+    }
+
+    @PutMapping("/first-run-completed")
+    public ResponseEntity<Map<String, Object>> setFirstRunCompleted(
+            @RequestBody(required = false) Map<String, Object> body) {
+        boolean value = readBoolean(body);
+        settingsService.set(SettingKey.FIRST_RUN_COMPLETED, value);
+        return ResponseEntity.ok(Map.of(
+                "value", settingsService.getBoolean(SettingKey.FIRST_RUN_COMPLETED)));
+    }
+
+    /**
+     * Reads a JSON boolean named value.
+     */
+    private static boolean readBoolean(Map<String, Object> body) {
+        if (body == null || !body.containsKey("value") || body.get("value") == null) {
+            throw new InvalidRequestException("value is required", "INVALID_SETTING");
+        }
+        Object raw = body.get("value");
+        if (raw instanceof Boolean b) {
+            return b;
+        }
+        throw new InvalidRequestException("value must be a boolean", "INVALID_SETTING");
+    }
+
     /**
      * Reads a Long JSON number named value.
      */

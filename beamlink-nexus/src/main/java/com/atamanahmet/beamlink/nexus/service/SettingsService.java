@@ -44,6 +44,15 @@ public class SettingsService {
         }
     }
 
+    /**
+     * Reads a boolean setting, or its default when missing.
+     */
+    public boolean getBoolean(SettingKey key) {
+        String raw = get(key).orElse(key.defaultValue());
+        key.validate(raw);
+        return "true".equals(raw);
+    }
+
     public void set(SettingKey key, String value) {
         key.validate(value);
         settingsRepository.save(new Setting(key, value));
@@ -51,6 +60,13 @@ public class SettingsService {
 
     public void set(SettingKey key, double value) {
         set(key, String.valueOf(value));
+    }
+
+    /**
+     * Stores a boolean as true or false.
+     */
+    public void set(SettingKey key, boolean value) {
+        set(key, value ? "true" : "false");
     }
 
     /**

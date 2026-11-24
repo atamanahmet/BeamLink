@@ -2,12 +2,45 @@ package com.atamanahmet.beamlink.nexus.domain.enums;
 
 import com.atamanahmet.beamlink.nexus.exception.InvalidRequestException;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 class SettingKeyTest {
+
+    @ParameterizedTest
+    @ValueSource(strings = {"true", "false"})
+    void booleanAcceptsExactLiterals(String raw) {
+        assertThatCode(() -> SettingKey.FIRST_RUN_COMPLETED.validate(raw))
+                .doesNotThrowAnyException();
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"TRUE", "FALSE", "True", "garbage", "1", "0"})
+    void booleanRejectsNonExactLiterals(String raw) {
+        assertThatThrownBy(() -> SettingKey.FIRST_RUN_COMPLETED.validate(raw))
+                .isInstanceOf(InvalidRequestException.class)
+                .extracting("code")
+                .isEqualTo("INVALID_SETTING");
+    }
+
+    @Test
+    void booleanRejectsEmpty() {
+        assertThatThrownBy(() -> SettingKey.FIRST_RUN_COMPLETED.validate(""))
+                .isInstanceOf(InvalidRequestException.class)
+                .extracting("code")
+                .isEqualTo("INVALID_SETTING");
+    }
+
+    @Test
+    void firstRunCompletedDefaultsToFalse() {
+        assertThat(SettingKey.FIRST_RUN_COMPLETED.defaultValue()).isEqualTo("false");
+        assertThat(SettingKey.FIRST_RUN_COMPLETED.type())
+                .isEqualTo(SettingKey.SettingType.BOOLEAN);
+    }
 
     @Test
     void minFreeSpaceBelowMinIsInvalid() {
