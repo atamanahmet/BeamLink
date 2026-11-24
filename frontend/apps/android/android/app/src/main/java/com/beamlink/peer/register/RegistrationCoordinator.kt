@@ -5,6 +5,7 @@ import android.os.Looper
 import com.beamlink.peer.config.DeviceDefaults
 import com.beamlink.peer.net.AddressGuard
 import com.beamlink.peer.security.DeviceKey
+import com.beamlink.peer.security.NexusTlsFingerprint
 import com.beamlink.peer.security.NexusTlsPin
 import com.beamlink.peer.security.PhoneTlsCert
 import com.beamlink.peer.security.TokenStore
@@ -63,14 +64,21 @@ class RegistrationCoordinator(
     fun confirm(raw: String, fingerprint: String) {
         val uri = AddressGuard.requireAllowedNexusUrl(raw)
         val url = uri.toString().trimEnd('/')
-        if (lastProbeUrl != url || lastProbeFingerprint != fingerprint) {
+        val canonical = NexusTlsFingerprint.canonicalize(fingerprint)
+        if (lastProbeUrl != url || lastProbeFingerprint != canonical) {
             throw IllegalArgumentException("Confirm does not match the last Connect")
         }
         val existing = prefs.tlsPin
-        if (existing.isNotBlank() && existing != fingerprint) {
-            throw IllegalStateException(NexusTlsPin.MISMATCH)
+        if (existing.isNotBlank()) {
+            try {
+                if (NexusTlsFingerprint.canonicalize(existing) != canonical) {
+                    throw IllegalStateException(NexusTlsPin.MISMATCH)
+                }
+            } catch (_: IllegalArgumentException) {
+                throw IllegalStateException(NexusTlsPin.MISMATCH)
+            }
         }
-        prefs.tlsPin = fingerprint
+        prefs.tlsPin = canonical
         prefs.nexusUrl = url
         lastProbeUrl = null
         lastProbeFingerprint = null

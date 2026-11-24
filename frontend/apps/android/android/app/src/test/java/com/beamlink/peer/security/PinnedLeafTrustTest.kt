@@ -64,6 +64,26 @@ class PinnedLeafTrustTest {
         assertEquals("missing", ex.message)
     }
 
+    @Test
+    fun acceptsSpacedOrColonStoredPin() {
+        val leaf = valid("forms")
+        val canonical = NexusTlsFingerprint.of(leaf)
+        val spaced = canonical.chunked(4).joinToString(" ")
+        val colons = canonical.chunked(4).joinToString(":")
+        PinnedLeafTrust.accept(arrayOf(leaf), { spaced }, "missing", "mismatch")
+        PinnedLeafTrust.accept(arrayOf(leaf), { colons }, "missing", "mismatch")
+    }
+
+    @Test
+    fun rejectsShort32HexStoredPin() {
+        val leaf = valid("short")
+        val short32 = NexusTlsFingerprint.of(leaf).substring(0, 32)
+        val ex = assertThrows(CertificateException::class.java) {
+            PinnedLeafTrust.accept(arrayOf(leaf), { short32 }, "missing", "mismatch")
+        }
+        assertEquals("missing", ex.message)
+    }
+
     private fun valid(cn: String): X509Certificate {
         return selfSigned(
             cn,

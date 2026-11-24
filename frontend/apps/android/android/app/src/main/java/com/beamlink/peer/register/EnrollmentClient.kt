@@ -6,12 +6,12 @@ import com.beamlink.peer.net.AddressGuard
 import com.beamlink.peer.net.HttpJsonClient
 import com.beamlink.peer.security.DeviceKey
 import com.beamlink.peer.security.DeviceSignaturePayload
+import com.beamlink.peer.security.NexusTlsFingerprint
 import com.beamlink.peer.security.NexusTlsPin
 import com.beamlink.peer.security.PhoneTlsCert
 import com.beamlink.peer.security.TokenStore
 import com.beamlink.peer.util.WifiIpv4
 import org.json.JSONObject
-import java.util.Locale
 import java.util.concurrent.ThreadLocalRandom
 import java.util.concurrent.atomic.AtomicBoolean
 
@@ -283,7 +283,7 @@ class EnrollmentClient(
             if (storedPin.isBlank()) {
                 return TokenCall(false, null, null, 0, null, null, null, null, null, null)
             }
-            val nexusLeaf = storedPin.replace(" ", "").lowercase(Locale.ROOT)
+            val nexusLeaf = NexusTlsFingerprint.canonicalize(storedPin)
             val signature = deviceKey.sign(
                 DeviceSignaturePayload.signedMessage(
                     deviceId,

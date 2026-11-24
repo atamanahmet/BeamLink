@@ -33,8 +33,13 @@ class PinnedLeafTrust(
             if (peer.isEmpty() || peer[0] !is X509Certificate) {
                 false
             } else {
-                val stored = pin()
-                stored != null && stored == NexusTlsFingerprint.of(peer[0] as X509Certificate)
+                val stored = pin() ?: return false
+                val expected = try {
+                    NexusTlsFingerprint.canonicalize(stored)
+                } catch (_: IllegalArgumentException) {
+                    return false
+                }
+                expected == NexusTlsFingerprint.of(peer[0] as X509Certificate)
             }
         } catch (_: Exception) {
             false
@@ -55,12 +60,17 @@ class PinnedLeafTrust(
             if (stored.isNullOrBlank()) {
                 throw CertificateException(missingMessage)
             }
+            val expected = try {
+                NexusTlsFingerprint.canonicalize(stored)
+            } catch (_: IllegalArgumentException) {
+                throw CertificateException(missingMessage)
+            }
             if (chain == null || chain.isEmpty()) {
                 throw CertificateException("empty certificate chain")
             }
             val seen = NexusTlsFingerprint.of(chain[0])
-            if (stored != seen) {
-                throw CertificateException("$mismatchMessage expected=$stored seen=$seen")
+            if (expected != seen) {
+                throw CertificateException("$mismatchMessage expected=$expected seen=$seen")
             }
         }
     }

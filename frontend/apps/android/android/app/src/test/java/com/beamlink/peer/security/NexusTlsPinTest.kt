@@ -68,11 +68,12 @@ class NexusTlsPinTest {
     }
 
     @Test
-    fun fingerprintGroupsFirst32HexBy4() {
+    fun fingerprintIs64Hex() {
         val leaf = valid("fp")
         val pin = AtomicReference("")
         pin.set(NexusTlsFingerprint.of(leaf))
-        assertEquals(8, pin.get().split(" ").size)
+        assertEquals(64, pin.get().length)
+        assertEquals(pin.get(), NexusTlsFingerprint.canonicalize(pin.get()))
     }
 
     private fun valid(cn: String): X509Certificate {

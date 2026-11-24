@@ -43,8 +43,13 @@ class NexusTlsPin(
             if (peer.isEmpty() || peer[0] !is X509Certificate) {
                 false
             } else {
-                val stored = pin()
-                stored != null && stored == NexusTlsFingerprint.of(peer[0] as X509Certificate)
+                val stored = pin() ?: return false
+                val expected = try {
+                    NexusTlsFingerprint.canonicalize(stored)
+                } catch (_: IllegalArgumentException) {
+                    return false
+                }
+                expected == NexusTlsFingerprint.of(peer[0] as X509Certificate)
             }
         } catch (_: Exception) {
             false
