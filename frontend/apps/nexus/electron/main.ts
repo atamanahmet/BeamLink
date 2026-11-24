@@ -10,6 +10,7 @@ import {
   session,
 } from "electron";
 import {
+  createAutostart,
   isExactAppSenderUrl,
   isHexColor,
   readSavedWindowTheme,
@@ -47,6 +48,27 @@ const APP_SENDER: AppSenderGuardOptions = {
 const NEXUS_UI_SECRET = randomBytes(32).toString("hex");
 
 registerFileHandlers(ipcMain, APP_SENDER);
+
+const autostart = createAutostart(app, {
+  appId: "com.beamlink.nexus",
+  displayName: "Beamlink Nexus",
+  desktopFileName: "beamlink-nexus.desktop",
+});
+
+ipcMain.handle("autostart:get", (event) => {
+  const bad = rejectNonAppSender(event, APP_SENDER);
+  if (bad) return bad;
+  return autostart.getAutostart();
+});
+
+ipcMain.handle("autostart:set", (event, enabled: unknown) => {
+  const bad = rejectNonAppSender(event, APP_SENDER);
+  if (bad) return bad;
+  if (typeof enabled !== "boolean") {
+    return { ok: false as const, code: "INVALID_AUTOSTART" };
+  }
+  return autostart.setAutostart(enabled);
+});
 
 /**
  * Injects the UI secret on requests to the local nexus or Vite proxy.
@@ -348,67 +370,99 @@ function createWindow() {
   } else {
     mainWindow.loadFile(path.join(__dirname, "../dist/index.html"));
   }
+  mainWindow.on("close", (e) => {
+    if (!isQuitting) {
+      e.preventDefault();
+      mainWindow?.hide();
+      if (process.platform === "darwin") app.dock?.hide();
+    }
+  });
+  mainWindow.on("session-end", () => {
+    isQuitting = true;
+  });
 }
 
-app.whenReady().then(async () => {
-  installUiSecretHeader();
-
-  resourcesDir =
-    process.env.NODE_ENV === "development"
-      ? path.resolve(__dirname, "../../../../resources/nexus")
-      : process.resourcesPath;
-
-  jreDir =
-    process.env.NODE_ENV === "development"
-      ? path.resolve(__dirname, "../../../../resources/jre")
-      : path.join(process.resourcesPath, "jre");
-
-  runtimeDir =
-    process.env.NODE_ENV === "development"
-      ? path.resolve(__dirname, "../../../../resources/nexus")
-      : path.join(app.getPath("appData"), "BeamLink", "Nexus");
-
-  const runtimeSubdirs = ["data/database", "data/uploads", "logs"];
-  for (const dir of runtimeSubdirs) {
-    fs.mkdirSync(path.join(runtimeDir, dir), { recursive: true });
-  }
-
-  if (process.platform === "darwin") {
-    app.dock?.setIcon(path.join(__dirname, "../assets/icon.png"));
-  }
-
-  createWindow();
-  createTray();
-
-  // Show window immediately so StartupScreen is visible while backend starts
-  mainWindow?.once("ready-to-show", () => {
-    mainWindow?.show();
-    mainWindow?.focus();
-    if (process.platform === "darwin") app.dock?.show();
+if (!app.requestSingleInstanceLock()) {
+  app.quit();
+} else {
+  app.on("second-instance", () => {
+    if (!mainWindow) {
+      return;
+    }
+    if (mainWindow.isMinimized()) {
+      mainWindow.restore();
+    }
+    mainWindow.show();
+    mainWindow.focus();
+    if (process.platform === "darwin") {
+      app.dock?.show();
+    }
   });
 
-  startBackend();
+  app.whenReady().then(async () => {
+    installUiSecretHeader();
 
-  BACKEND_PORT = await waitForRuntimeJson(runtimeDir, 7472);
+    resourcesDir =
+      process.env.NODE_ENV === "development"
+        ? path.resolve(__dirname, "../../../../resources/nexus")
+        : process.resourcesPath;
 
-  try {
-    const ok = await waitForBackend(
-      `http://localhost:${BACKEND_PORT}/actuator/health`,
-    );
-    backendState = ok
-      ? { status: "ready", backendUrl: `http://localhost:${BACKEND_PORT}` }
-      : {
-          status: "error",
-          message: "Backend did not respond after 60 seconds.",
-        };
+    jreDir =
+      process.env.NODE_ENV === "development"
+        ? path.resolve(__dirname, "../../../../resources/jre")
+        : path.join(process.resourcesPath, "jre");
 
-    mainWindow?.webContents.send("backend-status", backendState);
-  } catch (error) {
-    dialog.showErrorBox("Backend Startup Failed", String(error));
+    runtimeDir =
+      process.env.NODE_ENV === "development"
+        ? path.resolve(__dirname, "../../../../resources/nexus")
+        : path.join(app.getPath("appData"), "BeamLink", "Nexus");
 
-    app.quit();
-  }
-});
+    const runtimeSubdirs = ["data/database", "data/uploads", "logs"];
+    for (const dir of runtimeSubdirs) {
+      fs.mkdirSync(path.join(runtimeDir, dir), { recursive: true });
+    }
+
+    if (process.platform === "darwin") {
+      app.dock?.setIcon(path.join(__dirname, "../assets/icon.png"));
+    }
+
+    createWindow();
+    createTray();
+    autostart.syncLinuxDesktopExec();
+
+    // Show window immediately so StartupScreen is visible while backend starts
+    mainWindow?.once("ready-to-show", () => {
+      if (process.argv.includes("--hidden")) {
+        return;
+      }
+      mainWindow?.show();
+      mainWindow?.focus();
+      if (process.platform === "darwin") app.dock?.show();
+    });
+
+    startBackend();
+
+    BACKEND_PORT = await waitForRuntimeJson(runtimeDir, 7472);
+
+    try {
+      const ok = await waitForBackend(
+        `http://localhost:${BACKEND_PORT}/actuator/health`,
+      );
+      backendState = ok
+        ? { status: "ready", backendUrl: `http://localhost:${BACKEND_PORT}` }
+        : {
+            status: "error",
+            message: "Backend did not respond after 60 seconds.",
+          };
+
+      mainWindow?.webContents.send("backend-status", backendState);
+    } catch (error) {
+      dialog.showErrorBox("Backend Startup Failed", String(error));
+
+      app.quit();
+    }
+  });
+}
 
 app.on("window-all-closed", () => {
   // tray keeps the app alive

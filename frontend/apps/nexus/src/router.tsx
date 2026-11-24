@@ -1,6 +1,7 @@
 import { createHashRouter, Navigate } from "react-router";
 import { RouteErrorScreen } from "@beamlink/ui";
 import App from "./App";
+import { AuthenticatedShell } from "./AuthenticatedShell";
 import { Dashboard } from "./components/Dashboard";
 import { Login } from "./components/Login";
 import { ResetPassword } from "./components/ResetPassword";
@@ -32,27 +33,32 @@ export const router = createHashRouter([
         element: <RequireAuth />,
         children: [
           {
-            element: <Dashboard />,
+            element: <AuthenticatedShell />,
             children: [
-              { index: true, element: <Navigate to="/upload" replace /> },
               {
-                path: "upload",
-                lazy: () => import("./routes/UploadRoute"),
-              },
-              {
-                path: "network",
-                lazy: () =>
-                  import("./components/NetworkView").then((m) => ({
-                    Component: m.NetworkView,
-                  })),
-              },
-              {
-                path: "transfers",
-                lazy: () => import("./routes/TransferRoute"),
-              },
-              {
-                path: "settings",
-                lazy: () => import("./routes/SettingsRoute"),
+                element: <Dashboard />,
+                children: [
+                  { index: true, element: <Navigate to="/upload" replace /> },
+                  {
+                    path: "upload",
+                    lazy: () => import("./routes/UploadRoute"),
+                  },
+                  {
+                    path: "network",
+                    lazy: () =>
+                      import("./components/NetworkView").then((m) => ({
+                        Component: m.NetworkView,
+                      })),
+                  },
+                  {
+                    path: "transfers",
+                    lazy: () => import("./routes/TransferRoute"),
+                  },
+                  {
+                    path: "settings",
+                    lazy: () => import("./routes/SettingsRoute"),
+                  },
+                ],
               },
             ],
           },

@@ -70,4 +70,9 @@ contextBridge.exposeInMainWorld("electronAPI", {
   loadAuthToken: () => ipcRenderer.invoke("auth:load-token"),
 
   clearAuthToken: () => ipcRenderer.invoke("auth:clear-token"),
+
+  getAutostart: () => ipcRenderer.invoke("autostart:get"),
+
+  setAutostart: (enabled: boolean) =>
+    ipcRenderer.invoke("autostart:set", enabled),
 });

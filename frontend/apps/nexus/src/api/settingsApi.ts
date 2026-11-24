@@ -49,6 +49,14 @@ export const settingsApi: SettingsApi = {
     await apiClient.put("/settings/min-free-space", { value });
   },
 
+  getFirstRunCompleted: async () =>
+    (await apiClient.get<{ value: boolean }>("/settings/first-run-completed"))
+      .data,
+
+  putFirstRunCompleted: async (value) => {
+    await apiClient.put("/settings/first-run-completed", { value });
+  },
+
   getLanAddresses: async () =>
     (
       await apiClient.get<{ addresses: string[]; tlsPort: number }>(

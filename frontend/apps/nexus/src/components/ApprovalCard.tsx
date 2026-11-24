@@ -2,7 +2,7 @@ import { useState } from "react";
 import { Check, X } from "lucide-react";
 import { Button, Group, Paper, Stack, Text, Title } from "@mantine/core";
 import { DEVICE_KEY_LABEL } from "@beamlink/core";
-import { ConfirmDialog } from "@beamlink/features";
+import { ConfirmDialog, formatTlsPin } from "@beamlink/features";
 
 export type ApprovalCardProps = {
   title: string;
@@ -82,7 +82,7 @@ export function ApprovalCard({
         <ConfirmDialog
           open={confirmOpen}
           title={approvePreview.name}
-          body={`IP: ${approvePreview.ip}\n${DEVICE_KEY_LABEL}: ${approvePreview.fingerprint}`}
+          body={`IP: ${approvePreview.ip}\n${DEVICE_KEY_LABEL}: ${formatTlsPin(approvePreview.fingerprint)}`}
           confirmLabel="Approve"
           onConfirm={handleConfirm}
           onCancel={() => setConfirmOpen(false)}
