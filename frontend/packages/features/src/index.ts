@@ -69,7 +69,24 @@ export {
   useResumePolicySettings,
   type ResumePolicyControls,
 } from "./settings/useResumePolicySettings.ts";
+export {
+  useAutostart,
+  type AutostartControls,
+} from "./settings/useAutostart.ts";
+export {
+  AutostartSection,
+  type AutostartSectionProps,
+} from "./settings/AutostartSection.tsx";
+export {
+  FirstRunDialog,
+  type FirstRunDialogProps,
+} from "./settings/FirstRunDialog.tsx";
+export {
+  FirstRunHost,
+  type FirstRunHostProps,
+} from "./settings/FirstRunHost.tsx";
 export { FingerprintText } from "./settings/FingerprintText.tsx";
+export { formatTlsPin } from "./settings/formatTlsPin.ts";
 export {
   useNexusTlsPin,
   type NexusTlsPinControls,

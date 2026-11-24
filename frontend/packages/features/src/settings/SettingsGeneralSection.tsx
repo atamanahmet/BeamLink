@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import { Stack } from "@mantine/core";
 import { usePlatform } from "@beamlink/platform";
+import { AutostartSection } from "./AutostartSection.tsx";
 import { BackendHealthSection } from "./BackendHealthSection.tsx";
 import type { SettingsApi } from "@beamlink/core";
 import { BackendLogsSection } from "./BackendLogsSection.tsx";
@@ -8,6 +9,7 @@ import { CredentialsSection } from "./CredentialsSection.tsx";
 import { DangerZoneSection } from "./DangerZoneSection.tsx";
 import { LogoutEverywhereSection } from "./LogoutEverywhereSection.tsx";
 import { UploadDirectorySection } from "./UploadDirectorySection.tsx";
+import { useAutostart } from "./useAutostart.ts";
 import type {
   CredentialsState,
   LogState,
@@ -55,10 +57,22 @@ export function SettingsGeneralSection({
   generalBottom,
 }: SettingsGeneralSectionProps) {
   const { capabilities } = usePlatform();
+  const autostart = useAutostart();
 
   return (
     <Stack gap="md">
       <BackendHealthSection backendOnline={backendOnline} />
+      {autostart.capability && autostart.supported ? (
+        <AutostartSection
+          enabled={autostart.enabled}
+          onChange={(next) => {
+            void autostart.setEnabled(next);
+          }}
+          disabled={autostart.busy}
+          error={autostart.error}
+          correlationId={autostart.correlationId}
+        />
+      ) : null}
       <UploadDirectorySection
         uploadDir={uploadDir}
         onOpenFolder={onOpenFolder}

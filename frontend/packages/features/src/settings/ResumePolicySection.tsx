@@ -14,7 +14,8 @@ import { StatusMessage } from "./StatusMessage.tsx";
 type ResumePolicySectionProps = {
   resumePolicy: ResumePolicyState;
   onChangeValue: (value: "OWNER_ONLY" | "ANYONE") => void;
-  onSave: () => void;
+  onSave?: () => void;
+  showSave?: boolean;
 };
 
 /**
@@ -24,6 +25,7 @@ export function ResumePolicySection({
   resumePolicy,
   onChangeValue,
   onSave,
+  showSave = true,
 }: ResumePolicySectionProps) {
   return (
     <Paper
@@ -50,8 +52,7 @@ export function ResumePolicySection({
         </Group>
 
         <Text size="xs" c="var(--bl-text-muted)">
-          Owner only lets the side that paused resume. Anyone lets either side
-          resume.
+          Who can resume a paused transfer?
         </Text>
 
         <Group gap="xs">
@@ -61,26 +62,31 @@ export function ResumePolicySection({
               if (val === "OWNER_ONLY" || val === "ANYONE") onChangeValue(val);
             }}
             data={[
-              { value: "OWNER_ONLY", label: "Owner only" },
-              { value: "ANYONE", label: "Anyone" },
+              {
+                value: "OWNER_ONLY",
+                label: "Only the sender (recommended)",
+              },
+              { value: "ANYONE", label: "Both sides" },
             ]}
-            w={220}
+            w={280}
             allowDeselect={false}
           />
-          <Button
-            onClick={onSave}
-            disabled={resumePolicy.save === "saving"}
-            leftSection={
-              resumePolicy.save === "saving" ? (
-                <Loader size={16} color="white" type="dots" />
-              ) : undefined
-            }
-          >
-            {resumePolicy.save === "saving" ? "Saving..." : "Save"}
-          </Button>
+          {showSave && onSave ? (
+            <Button
+              onClick={onSave}
+              disabled={resumePolicy.save === "saving"}
+              leftSection={
+                resumePolicy.save === "saving" ? (
+                  <Loader size={16} color="white" type="dots" />
+                ) : undefined
+              }
+            >
+              {resumePolicy.save === "saving" ? "Saving..." : "Save"}
+            </Button>
+          ) : null}
         </Group>
 
-        {resumePolicy.save === "success" ? (
+        {showSave && resumePolicy.save === "success" ? (
           <StatusMessage type="success" message="Resume policy updated." />
         ) : null}
         {resumePolicy.error ? (
