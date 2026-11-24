@@ -59,6 +59,13 @@ declare global {
       clearAuthToken?: () => Promise<
         { ok: true } | { ok: false; code: string }
       >;
+      getAutostart?: () => Promise<{
+        supported: boolean;
+        enabled: boolean;
+      }>;
+      setAutostart?: (
+        enabled: boolean,
+      ) => Promise<{ supported: boolean; enabled: boolean }>;
     };
   }
 }

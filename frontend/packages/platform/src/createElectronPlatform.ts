@@ -14,6 +14,10 @@ export async function createElectronPlatform(): Promise<Platform> {
     console.warn("[platform] homedir unavailable, using", homedir);
   }
 
+  const hasAutostart =
+    typeof window.electronAPI.getAutostart === "function" &&
+    typeof window.electronAPI.setAutostart === "function";
+
   return {
     env: { sep, homedir },
     capabilities: {
@@ -22,6 +26,7 @@ export async function createElectronPlatform(): Promise<Platform> {
       transferHistory: true,
       transferLogs: true,
       warp: true,
+      autostart: hasAutostart,
     },
     getPathForFiles: (files) =>
       Promise.resolve(window.electronAPI.getPathForFiles(files)),
@@ -33,5 +38,13 @@ export async function createElectronPlatform(): Promise<Platform> {
       Promise.resolve(window.electronAPI.onBackendStatus(cb)),
     getBackendStatus: () => window.electronAPI.getBackendStatus(),
     setWindowTheme: (colors) => window.electronAPI.setWindowTheme(colors),
+    getAutostart: () =>
+      hasAutostart
+        ? window.electronAPI.getAutostart!()
+        : Promise.resolve({ supported: false, enabled: false }),
+    setAutostart: (enabled) =>
+      hasAutostart
+        ? window.electronAPI.setAutostart!(enabled)
+        : Promise.resolve({ supported: false, enabled: false }),
   };
 }

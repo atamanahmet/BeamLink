@@ -29,6 +29,7 @@ export async function createAndroidPlatform(): Promise<Platform> {
       transferHistory: false,
       transferLogs: false,
       warp: false,
+      autostart: false,
     },
     getPathForFiles: async (files) =>
       files.map((file) => file.name).filter(Boolean),
@@ -46,6 +47,8 @@ export async function createAndroidPlatform(): Promise<Platform> {
       status: "ready",
       backendUrl: localStorage.getItem("backendUrl") ?? "",
     }),
+    getAutostart: async () => ({ supported: false, enabled: false }),
+    setAutostart: async () => ({ supported: false, enabled: false }),
     onSharedFiles: (cb) => {
       let handle: { remove: () => Promise<void> } | null = null;
       void ShareReceiver.addListener("sharedFiles", (event) => {
