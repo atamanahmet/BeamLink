@@ -20,7 +20,6 @@ import reactor.core.scheduler.Schedulers;
 
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
-import java.util.Locale;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.ThreadLocalRandom;
@@ -224,7 +223,7 @@ public class DeviceEnrollmentClient {
             if (storedPin == null || storedPin.isBlank()) {
                 return TokenCall.fail(null, null, 0);
             }
-            String nexusLeaf = storedPin.replace(" ", "").toLowerCase(Locale.ROOT);
+            String nexusLeaf = NexusTlsFingerprint.canonicalize(storedPin);
             String tlsFingerprint = NexusTlsFingerprint.of(deviceTlsCert.getLeaf());
             int tlsPort = deviceConfig.getTlsPort();
             byte[] message = DeviceSignaturePayload.signedMessage(

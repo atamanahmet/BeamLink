@@ -73,6 +73,31 @@ class PinnedLeafTrustTest {
                 .hasMessage("missing");
     }
 
+    @Test
+    void acceptsSpacedOrColonStoredPin() throws Exception {
+        X509Certificate leaf = valid("forms");
+        String canonical = NexusTlsFingerprint.of(leaf);
+        String spaced = canonical.replaceAll("(.{4})", "$1 ").trim();
+        String colons = canonical.replaceAll("(.{4})", "$1:").replaceAll(":$", "");
+        PinnedLeafTrust.accept(
+                new X509Certificate[]{leaf}, () -> spaced, "missing", "mismatch");
+        PinnedLeafTrust.accept(
+                new X509Certificate[]{leaf}, () -> colons, "missing", "mismatch");
+    }
+
+    @Test
+    void rejectsShort32HexStoredPin() throws Exception {
+        X509Certificate leaf = valid("short");
+        String short32 = NexusTlsFingerprint.of(leaf).substring(0, 32);
+        assertThatThrownBy(() -> PinnedLeafTrust.accept(
+                new X509Certificate[]{leaf},
+                () -> short32,
+                "missing",
+                "mismatch"))
+                .isInstanceOf(CertificateException.class)
+                .hasMessage("missing");
+    }
+
     /**
      * Dummy SSLEngine so the extended overload is the one under test.
      */

@@ -4,6 +4,7 @@ import com.atamanahmet.beamlink.peer.config.NexusAddressHolder;
 import com.atamanahmet.beamlink.peer.config.NexusMdnsDiscovery;
 import com.atamanahmet.beamlink.peer.exception.InvalidRequestException;
 import com.atamanahmet.beamlink.peer.exception.NexusTlsPinMismatchException;
+import com.atamanahmet.beamlink.peer.security.NexusTlsFingerprint;
 import com.atamanahmet.beamlink.peer.security.NexusTlsPin;
 import org.springframework.context.annotation.Lazy;
 import org.springframework.stereotype.Service;
@@ -72,14 +73,26 @@ public class NexusFirstContactService {
         String url = httpsUrl(ip, port);
         String probed = lastProbeFingerprint.get();
         String probedUrl = lastProbeUrl.get();
-        if (probed == null || probedUrl == null || !probedUrl.equals(url) || !probed.equals(fingerprint)) {
+        String canonical;
+        try {
+            canonical = NexusTlsFingerprint.canonicalize(fingerprint);
+        } catch (IllegalArgumentException e) {
+            throw new InvalidRequestException(e.getMessage(), e);
+        }
+        if (probed == null || probedUrl == null || !probedUrl.equals(url) || !probed.equals(canonical)) {
             throw new InvalidRequestException("Confirm does not match the last Connect");
         }
         String existing = nexusTlsPin.storedPin();
-        if (existing != null && !existing.equals(fingerprint)) {
-            throw new NexusTlsPinMismatchException();
+        if (existing != null) {
+            try {
+                if (!NexusTlsFingerprint.canonicalize(existing).equals(canonical)) {
+                    throw new NexusTlsPinMismatchException();
+                }
+            } catch (IllegalArgumentException e) {
+                throw new NexusTlsPinMismatchException();
+            }
         }
-        nexusTlsPin.store(fingerprint);
+        nexusTlsPin.store(canonical);
         nexusAddressHolder.setNexusUrl(url);
         suggestedUrl.set(null);
         lastProbeUrl.set(null);

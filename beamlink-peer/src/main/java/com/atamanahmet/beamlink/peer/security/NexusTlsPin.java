@@ -48,10 +48,10 @@ public class NexusTlsPin extends X509ExtendedTrustManager {
     }
 
     /**
-     * Persists the confirmed pin.
+     * Persists the confirmed pin in canonical form.
      */
     public void store(String pin) {
-        settingsService.set(SettingKey.NEXUS_TLS_PIN, pin);
+        settingsService.set(SettingKey.NEXUS_TLS_PIN, NexusTlsFingerprint.canonicalize(pin));
     }
 
     /**
