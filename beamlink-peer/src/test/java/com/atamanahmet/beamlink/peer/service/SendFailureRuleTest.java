@@ -4,6 +4,7 @@ import com.atamanahmet.beamlink.peer.exception.ChunkHttpException;
 import com.atamanahmet.beamlink.peer.exception.ChunkRetryExhaustedException;
 import com.atamanahmet.beamlink.peer.exception.FileTransferException;
 import com.atamanahmet.beamlink.peer.exception.OffsetMismatchException;
+import com.atamanahmet.beamlink.peer.exception.TransferErrorCodes;
 import com.atamanahmet.beamlink.peer.exception.TransferProtocolException;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -63,8 +64,22 @@ class SendFailureRuleTest {
                         new OffsetMismatchException(120L),
                         SendFailureKind.RESYNC),
                 Arguments.of(
-                        "http409Other",
+                        "http409NullCode",
                         new ChunkHttpException(409, "Chunk rejected. Status: 409"),
+                        SendFailureKind.FATAL),
+                Arguments.of(
+                        "http409ReceiveInProgress",
+                        new ChunkHttpException(
+                                409,
+                                "Chunk rejected. Status: 409",
+                                TransferErrorCodes.RECEIVE_IN_PROGRESS),
+                        SendFailureKind.RETRY),
+                Arguments.of(
+                        "http409OtherCode",
+                        new ChunkHttpException(
+                                409,
+                                "Chunk rejected. Status: 409",
+                                "SOME_OTHER"),
                         SendFailureKind.FATAL),
                 Arguments.of(
                         "http507",

@@ -2,6 +2,7 @@ package com.atamanahmet.beamlink.peer.service;
 
 import com.atamanahmet.beamlink.peer.exception.ChunkHttpException;
 import com.atamanahmet.beamlink.peer.exception.OffsetMismatchException;
+import com.atamanahmet.beamlink.peer.exception.TransferErrorCodes;
 import com.atamanahmet.beamlink.peer.exception.TransferProtocolException;
 
 /**
@@ -34,6 +35,10 @@ public final class SendFailureRule {
             if (t instanceof ChunkHttpException httpError) {
                 if (httpError.getStatusCode() == 422) {
                     return SendFailureKind.CHUNK_CORRUPT;
+                }
+                if (httpError.getStatusCode() == 409
+                        && TransferErrorCodes.RECEIVE_IN_PROGRESS.equals(httpError.getCode())) {
+                    return SendFailureKind.RETRY;
                 }
                 return classifyHttpStatus(httpError.getStatusCode());
             }

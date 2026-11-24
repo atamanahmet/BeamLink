@@ -497,7 +497,7 @@ public class TransferSender {
         }
         if (response.statusCode() == 409) {
             JsonNode body = jacksonOrIo(() -> objectMapper.readTree(response.body()));
-            String code = body.path("code").asText();
+            String code = body.path("code").asText(null);
             if ("TRANSFER_PAUSED".equals(code)) {
                 PauseOwner pausedBy = null;
                 String pausedByText = body.path("pausedBy").asText(null);
@@ -513,6 +513,11 @@ public class TransferSender {
             if ("OFFSET_MISMATCH".equals(code)) {
                 throw new OffsetMismatchException(body.path("expectedOffset").asLong(-1L));
             }
+            throw new ChunkHttpException(
+                    response.statusCode(),
+                    "Chunk rejected. Status: " + response.statusCode()
+                            + " Body: " + response.body(),
+                    code);
         }
         if (response.statusCode() != 200) {
             throw new ChunkHttpException(
