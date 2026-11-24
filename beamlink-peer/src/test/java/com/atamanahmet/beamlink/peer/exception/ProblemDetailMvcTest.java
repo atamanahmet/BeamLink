@@ -1,8 +1,13 @@
 package com.atamanahmet.beamlink.peer.exception;
 
+import com.atamanahmet.beamlink.peer.config.DeviceConfig;
+import com.atamanahmet.beamlink.peer.controller.SettingsController;
 import com.atamanahmet.beamlink.peer.controller.StorageController;
 import com.atamanahmet.beamlink.peer.controller.TransferInboundController;
 import com.atamanahmet.beamlink.peer.service.ChunkReceiverService;
+import com.atamanahmet.beamlink.peer.service.DiskReserveProvider;
+import com.atamanahmet.beamlink.peer.service.SettingsService;
+import com.atamanahmet.beamlink.peer.service.SpeedLimitSettingsCache;
 import com.atamanahmet.beamlink.peer.service.StorageService;
 import com.atamanahmet.beamlink.peer.service.SystemService;
 import com.atamanahmet.beamlink.peer.service.TransferManagementService;
@@ -29,6 +34,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.ArgumentMatchers.nullable;
 import static org.mockito.Mockito.doCallRealMethod;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -163,6 +169,38 @@ class ProblemDetailMvcTest {
                         .content("{\"path\":\"\"}"))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.code").value("INVALID_REQUEST"))
+                .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_PROBLEM_JSON));
+    }
+
+    @Test
+    void firstRunCompletedStringBodyIsBadRequestProblemJson() throws Exception {
+        MockMvc settingsMvc = mvcFor(new SettingsController(
+                mock(SettingsService.class),
+                mock(SpeedLimitSettingsCache.class),
+                mock(DiskReserveProvider.class),
+                mock(DeviceConfig.class)));
+        settingsMvc.perform(put("/api/device/settings/first-run-completed")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"value\":\"true\"}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("INVALID_SETTING"))
+                .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_PROBLEM_JSON));
+    }
+
+    @Test
+    void firstRunCompletedCorruptGetIsBadRequestProblemJson() throws Exception {
+        SettingsService settings = mock(SettingsService.class);
+        doThrow(new InvalidRequestException("Invalid setting value", "INVALID_SETTING"))
+                .when(settings)
+                .getBoolean(any());
+        MockMvc settingsMvc = mvcFor(new SettingsController(
+                settings,
+                mock(SpeedLimitSettingsCache.class),
+                mock(DiskReserveProvider.class),
+                mock(DeviceConfig.class)));
+        settingsMvc.perform(get("/api/device/settings/first-run-completed"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("INVALID_SETTING"))
                 .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_PROBLEM_JSON));
     }
 
