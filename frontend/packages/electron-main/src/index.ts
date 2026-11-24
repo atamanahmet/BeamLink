@@ -22,3 +22,16 @@ export {
   registerFileHandlers,
   type RegisterFileHandlersOptions,
 } from "./registerFileHandlers.ts";
+export {
+  createAutostart,
+  type AutostartOptions,
+  type AutostartStatus,
+} from "./autostart.ts";
+export {
+  buildDesktopExecLine,
+  buildDesktopFileText,
+  desktopExecMatches,
+  isDesktopAutostartEnabled,
+  parseDesktopExec,
+  quoteDesktopExecPath,
+} from "./autostartDesktop.ts";
