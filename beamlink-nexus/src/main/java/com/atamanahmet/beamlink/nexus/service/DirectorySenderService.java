@@ -83,7 +83,7 @@ public class DirectorySenderService {
         for (WalkResult.FileEntry entry : walk.files()) {
             UUID transferId = UUID.randomUUID();
             String fileName = entry.absolutePath().getFileName().toString();
-            String relativePath = sourceDir.relativize(entry.absolutePath()).toString();
+            String relativePath = TransferPath.join(sourceDir.relativize(entry.absolutePath()));
 
             FileTransfer ft = FileTransfer.initiate(
                     transferId,
@@ -211,7 +211,7 @@ public class DirectorySenderService {
                         return FileVisitResult.CONTINUE;
                     }
                     if (!dirsWithFiles.contains(dir)) {
-                        emptyDirectories.add(root.relativize(dir).toString());
+                        emptyDirectories.add(TransferPath.join(root.relativize(dir)));
                     }
                     return FileVisitResult.CONTINUE;
                 }

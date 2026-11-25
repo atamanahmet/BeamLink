@@ -48,9 +48,9 @@ public class StorageController {
 
         Path newPath;
         try {
-            newPath = Path.of(rawPath);
+            newPath = Path.of(rawPath).toAbsolutePath().normalize();
         } catch (InvalidPathException e) {
-            throw new InvalidRequestException("Invalid path: " + e.getMessage(), e);
+            throw new InvalidRequestException("Invalid path", e);
         }
 
         storageService.updateUploadsDir(newPath);

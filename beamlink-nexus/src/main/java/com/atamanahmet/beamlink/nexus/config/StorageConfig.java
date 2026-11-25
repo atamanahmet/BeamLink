@@ -14,12 +14,10 @@ public class StorageConfig {
     private String runtimeDir;
 
     public Path getDefaultUploadsDir() {
-
-        return Path.of(runtimeDir, "data", "uploads");
+        return Path.of(runtimeDir, "data", "uploads").toAbsolutePath().normalize();
     }
 
     public Path getDefaultLogsDir() {
-
-        return Path.of(runtimeDir, "logs");
+        return Path.of(runtimeDir, "logs").toAbsolutePath().normalize();
     }
 }

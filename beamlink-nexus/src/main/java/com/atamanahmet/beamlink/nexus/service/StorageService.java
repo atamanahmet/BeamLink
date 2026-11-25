@@ -4,6 +4,7 @@ import com.atamanahmet.beamlink.nexus.config.StorageConfig;
 import com.atamanahmet.beamlink.nexus.domain.FileTransfer;
 import com.atamanahmet.beamlink.nexus.domain.enums.SettingKey;
 import com.atamanahmet.beamlink.nexus.exception.InsufficientDiskSpaceException;
+import com.atamanahmet.beamlink.nexus.exception.InvalidRequestException;
 import jakarta.annotation.PostConstruct;
 import lombok.Getter;
 import lombok.RequiredArgsConstructor;
@@ -39,11 +40,12 @@ public class StorageService {
     }
 
     public void updateUploadsDir(Path newPath) {
-        createDirectory(newPath);
-        settingsService.set(SettingKey.STORAGE_UPLOAD_DIR, newPath.toString());
-        this.uploadsDir = newPath;
+        Path normalized = newPath.toAbsolutePath().normalize();
+        createDirectory(normalized);
+        settingsService.set(SettingKey.STORAGE_UPLOAD_DIR, normalized.toString());
+        this.uploadsDir = normalized;
         ensurePartialDir();
-        log.info("Uploads directory updated to: {}", newPath);
+        log.info("Uploads directory updated to: {}", normalized);
     }
 
     public Path getLogsPath() {
@@ -51,13 +53,14 @@ public class StorageService {
     }
 
     private Path resolveUploadsDir() {
-        return settingsService.get(SettingKey.STORAGE_UPLOAD_DIR)
+        Path raw = settingsService.get(SettingKey.STORAGE_UPLOAD_DIR)
                 .map(Path::of)
                 .orElseGet(() -> {
                     Path fallback = storageConfig.getDefaultUploadsDir();
                     log.warn("No upload directory configured in DB, using default: {}", fallback);
                     return fallback;
                 });
+        return raw.toAbsolutePath().normalize();
     }
 
     /**
@@ -89,7 +92,11 @@ public class StorageService {
 
     public Path resolvePartialPath(String fileName) {
         ensurePartialDir();
-        return getPartialDir().resolve(fileName + ".part");
+        String rule = TransferPath.segmentRule(fileName);
+        if (rule != null) {
+            throw new InvalidRequestException(TransferPath.DETAIL, rule);
+        }
+        return TransferPath.resolveSegment(getPartialDir(), fileName + ".part");
     }
 
     /**
@@ -122,11 +129,10 @@ public class StorageService {
 
         Path finalPath;
         if (transfer.getRelativePath() != null && transfer.getDirectoryName() != null) {
-            finalPath = uploadsDir
-                    .resolve(transfer.getDirectoryName())
-                    .resolve(transfer.getRelativePath());
+            Path dirRoot = TransferPath.resolveSegment(uploadsDir, transfer.getDirectoryName());
+            finalPath = TransferPath.resolveRelative(dirRoot, transfer.getRelativePath());
         } else {
-            finalPath = uploadsDir.resolve(transfer.getFileName());
+            finalPath = TransferPath.resolveSegment(uploadsDir, transfer.getFileName());
         }
 
         try {
