@@ -4,6 +4,7 @@ import com.atamanahmet.beamlink.nexus.domain.Device;
 import com.atamanahmet.beamlink.nexus.domain.enums.DeviceState;
 import com.atamanahmet.beamlink.nexus.service.DeviceService;
 import com.atamanahmet.beamlink.nexus.security.DeviceTokenService;
+import com.atamanahmet.beamlink.nexus.security.enums.TokenType;
 import com.atamanahmet.beamlink.nexus.exception.ErrorReason;
 import com.atamanahmet.beamlink.nexus.exception.InvalidTokenException;
 import com.atamanahmet.beamlink.nexus.exception.ProblemDetailWriter;
@@ -52,6 +53,17 @@ public class DeviceHandshakeInterceptor implements HandshakeInterceptor {
 
         UUID deviceId;
         try {
+            TokenType type = deviceTokenService.extractTokenType(token);
+            if (type != TokenType.DEVICE_AUTH) {
+                log.warn("WS handshake rejected, token type {}", type);
+                writeHandshakeError(
+                        response,
+                        HttpStatus.UNAUTHORIZED,
+                        "Unauthorized",
+                        "Invalid token",
+                        "UNAUTHORIZED");
+                return false;
+            }
             deviceId = deviceTokenService.extractDeviceId(token);
         } catch (InvalidTokenException e) {
             log.warn("WS handshake rejected, invalid token: {}", e.getMessage());

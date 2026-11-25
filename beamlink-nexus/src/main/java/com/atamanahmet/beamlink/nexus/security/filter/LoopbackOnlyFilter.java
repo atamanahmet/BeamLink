@@ -24,7 +24,9 @@ public class LoopbackOnlyFilter extends OncePerRequestFilter {
     public LoopbackOnlyFilter() {
         this.restricted = RequestMatchers.anyOf(
                 PathPatternRequestMatcher.pathPattern("/api/nexus/auth/**"),
-                PathPatternRequestMatcher.pathPattern("/api/nexus/admin/**"));
+                PathPatternRequestMatcher.pathPattern("/api/nexus/admin/**"),
+                PathPatternRequestMatcher.pathPattern("/api/nexus/settings/**"),
+                PathPatternRequestMatcher.pathPattern("/api/nexus/storage/**"));
     }
 
     @Override
@@ -54,7 +56,7 @@ public class LoopbackOnlyFilter extends OncePerRequestFilter {
     }
 
     /**
-     * True for /api/nexus/auth and /api/nexus/admin paths.
+     * True for auth, admin, settings and storage paths.
      */
     private boolean restricted(HttpServletRequest request) {
         return this.restricted.matches(request);

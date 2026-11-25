@@ -83,7 +83,7 @@ public class SecurityConfig {
                         .requestMatchers(DEVICE_ONLY).hasRole(DEVICE)
                         .requestMatchers(DEVICE_PUBLIC_AND_ADMIN).hasAnyRole(DEVICE, DEVICE_PUBLIC, ADMIN)
                         .requestMatchers(ADMIN_ONLY).hasRole(ADMIN)
-                        .anyRequest().authenticated()
+                        .anyRequest().hasRole(ADMIN)
                 )
                 .httpBasic(AbstractHttpConfigurer::disable)
                 .formLogin(AbstractHttpConfigurer::disable)
