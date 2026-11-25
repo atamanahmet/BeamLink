@@ -15,6 +15,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
 
 import java.io.IOException;
@@ -36,7 +37,9 @@ public class TransferInboundController {
      * Source registers the transfer before sending any chunks, target prepares partial file on disk
      */
     @PostMapping("/receive")
-    public ResponseEntity<Void> prepareReceive(@RequestBody PrepareReceiveRequest request) {
+    public ResponseEntity<Void> prepareReceive(
+            @RequestBody PrepareReceiveRequest request,
+            Authentication authentication) {
 
         long fileSize = FileSizeRule.requireValid(request.getFileSize());
         FileTransfer transfer = FileTransfer.initiate(
@@ -51,7 +54,7 @@ public class TransferInboundController {
         transfer.setSourcePort(request.getSourcePort());
         transfer.setStatus(TransferStatus.ACTIVE);
 
-        receiverService.prepareReceive(transfer);
+        receiverService.prepareReceive(transfer, principal(authentication));
         return ResponseEntity.status(HttpStatus.OK).build();
     }
 
@@ -60,9 +63,10 @@ public class TransferInboundController {
      */
     @PostMapping("/receive-directory")
     public ResponseEntity<Void> prepareReceiveDirectory(
-            @RequestBody ReceiveDirectoryRequest request) {
+            @RequestBody ReceiveDirectoryRequest request,
+            Authentication authentication) {
 
-        receiverService.prepareReceiveDirectory(request);
+        receiverService.prepareReceiveDirectory(request, principal(authentication));
         return ResponseEntity.status(HttpStatus.OK).build();
     }
 
@@ -71,9 +75,10 @@ public class TransferInboundController {
      */
     @PostMapping("/receive-batch")
     public ResponseEntity<Void> prepareReceiveBatch(
-            @RequestBody ReceiveBatchRequest request) {
+            @RequestBody ReceiveBatchRequest request,
+            Authentication authentication) {
 
-        receiverService.prepareReceiveBatch(request);
+        receiverService.prepareReceiveBatch(request, principal(authentication));
         return ResponseEntity.status(HttpStatus.OK).build();
     }
 
@@ -86,11 +91,17 @@ public class TransferInboundController {
             @RequestHeader("Content-Range") String contentRange,
             @RequestHeader(value = TransferConstants.CHUNK_SHA256_HEADER, required = false)
             String chunkSha256,
-            HttpServletRequest request) throws IOException {
+            HttpServletRequest request,
+            Authentication authentication) throws IOException {
 
         long[] range = parseContentRange(contentRange);
         ChunkAckResponse ack = receiverService.receiveChunk(
-                transferId, range[0], range[1], request.getInputStream(), chunkSha256);
+                transferId,
+                range[0],
+                range[1],
+                request.getInputStream(),
+                chunkSha256,
+                principal(authentication));
 
         return ResponseEntity.status(HttpStatus.OK).body(ack);
     }
@@ -99,8 +110,11 @@ public class TransferInboundController {
      * Source queries confirmed offset before resuming a paused transfer
      */
     @GetMapping("/{transferId}/offset")
-    public ResponseEntity<Map<String, Long>> getOffset(@PathVariable UUID transferId) {
-        long confirmedOffset = receiverService.getConfirmedOffset(transferId);
+    public ResponseEntity<Map<String, Long>> getOffset(
+            @PathVariable UUID transferId,
+            Authentication authentication) {
+        long confirmedOffset = receiverService.getConfirmedOffset(
+                transferId, principal(authentication));
         return ResponseEntity.ok(Map.of("confirmedOffset", confirmedOffset));
     }
 
@@ -130,9 +144,12 @@ public class TransferInboundController {
      * Peer notifies us to cancel our side of the transfer
      */
     @DeleteMapping("/{transferId}/cancel-notify")
-    public ResponseEntity<Void> cancelNotify(@PathVariable UUID transferId) {
-        receiverService.cancelReceive(transferId);
-        senderService.cancel(transferId);
+    public ResponseEntity<Void> cancelNotify(
+            @PathVariable UUID transferId,
+            Authentication authentication) {
+        Object principal = principal(authentication);
+        receiverService.cancelReceive(transferId, principal);
+        senderService.cancel(transferId, principal);
         return ResponseEntity.ok().build();
     }
 
@@ -142,10 +159,12 @@ public class TransferInboundController {
     @PostMapping("/{transferId}/fail-notify")
     public ResponseEntity<Void> failNotify(
             @PathVariable UUID transferId,
-            @RequestBody Map<String, String> body) {
+            @RequestBody Map<String, String> body,
+            Authentication authentication) {
+        Object principal = principal(authentication);
         String reason = body != null ? body.get("reason") : null;
-        receiverService.failReceive(transferId, reason);
-        senderService.applyFailNotify(transferId, reason);
+        receiverService.failReceive(transferId, reason, principal);
+        senderService.applyFailNotify(transferId, reason, principal);
         return ResponseEntity.ok().build();
     }
 
@@ -155,8 +174,10 @@ public class TransferInboundController {
     @PostMapping("/{transferId}/pause-notify")
     public ResponseEntity<Void> pauseNotify(
             @PathVariable UUID transferId,
-            @RequestBody PauseNotifyRequest request) {
-        managementService.applyPauseNotify(transferId, request.getPausedBy(), request.getReason());
+            @RequestBody PauseNotifyRequest request,
+            Authentication authentication) {
+        managementService.applyPauseNotify(
+                transferId, request.getPausedBy(), request.getReason(), principal(authentication));
         return ResponseEntity.ok().build();
     }
 
@@ -164,8 +185,14 @@ public class TransferInboundController {
      * Peer notifies us to resume our side of the transfer
      */
     @PostMapping("/{transferId}/resume-notify")
-    public ResponseEntity<Void> resumeNotify(@PathVariable UUID transferId) {
-        managementService.applyResumeNotify(transferId);
+    public ResponseEntity<Void> resumeNotify(
+            @PathVariable UUID transferId,
+            Authentication authentication) {
+        managementService.applyResumeNotify(transferId, principal(authentication));
         return ResponseEntity.ok().build();
+    }
+
+    private static Object principal(Authentication authentication) {
+        return authentication != null ? authentication.getPrincipal() : null;
     }
 }

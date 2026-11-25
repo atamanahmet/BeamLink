@@ -11,6 +11,7 @@ import com.atamanahmet.beamlink.nexus.dto.ReceiveBatchRequest;
 import com.atamanahmet.beamlink.nexus.dto.ReceiveDirectoryRequest;
 import com.atamanahmet.beamlink.nexus.exception.FileTransferException;
 import com.atamanahmet.beamlink.nexus.exception.InsufficientDiskException;
+import com.atamanahmet.beamlink.nexus.exception.InvalidRequestException;
 import com.atamanahmet.beamlink.nexus.exception.OffsetMismatchException;
 import com.atamanahmet.beamlink.nexus.exception.TransferProtocolException;
 import com.atamanahmet.beamlink.nexus.config.TransferProperties;
@@ -55,8 +56,10 @@ public class ChunkReceiverService {
     private final ConcurrentHashMap<UUID, Long> lastReceiverSaveAt = new ConcurrentHashMap<>();
 
     @Transactional
-    public void prepareReceive(FileTransfer transfer) {
+    public void prepareReceive(FileTransfer transfer, Object principal) {
+        TransferPartyGuard.requireSource(principal, transfer.getSourceDeviceId());
         FileSizeRule.requireValid(transfer.getFileSize());
+        Path partialFile = resolvePartialLogged(transfer.getFileName(), transfer.getSourceDeviceId());
 
         long required = transfer.getFileSize() - transfer.getConfirmedOffset();
         if (required < 0L) {
@@ -64,7 +67,6 @@ public class ChunkReceiverService {
         }
         requireRoom(required);
 
-        Path partialFile = storageService.resolvePartialPath(transfer.getFileName());
         storageService.allocatePartialFile(partialFile, transfer.getFileSize());
         transfer.setFilePath(partialFile.toString());
         fileTransferService.save(transfer);
@@ -74,7 +76,27 @@ public class ChunkReceiverService {
     }
 
     @Transactional
-    public void prepareReceiveDirectory(ReceiveDirectoryRequest request) {
+    public void prepareReceiveDirectory(ReceiveDirectoryRequest request, Object principal) {
+        TransferPartyGuard.requireSource(principal, request.getSourceDeviceId());
+        UUID deviceId = request.getSourceDeviceId();
+        Path dirRoot = resolveSegmentLogged(
+                storageService.getUploadsDir(), request.getDirectoryName(), deviceId);
+        List<String> emptyDirectories = request.getEmptyDirectories() != null
+                ? request.getEmptyDirectories()
+                : Collections.emptyList();
+        for (String emptyDir : emptyDirectories) {
+            resolveRelativeLogged(dirRoot, emptyDir, deviceId);
+        }
+
+        long required = 0L;
+        List<Path> partialFiles = new ArrayList<>();
+        for (ReceiveDirectoryRequest.FileEntry entry : request.getFiles()) {
+            required += FileSizeRule.requireValid(entry.getFileSize());
+            resolveRelativeLogged(dirRoot, entry.getRelativePath(), deviceId);
+            partialFiles.add(resolvePartialLogged(entry.getFileName(), deviceId));
+        }
+        requireRoom(required);
+
         DirectoryTransfer dt = DirectoryTransfer.initiate(
                 request.getDirectoryTransferId(),
                 request.getDispatchId(),
@@ -86,27 +108,18 @@ public class ChunkReceiverService {
                 null,
                 request.getTotalFiles(),
                 request.getTotalSize(),
-                request.getEmptyDirectories() != null
-                        ? request.getEmptyDirectories()
-                        : Collections.emptyList()
+                emptyDirectories
         );
         dt.setStatus(GroupTransferStatus.ACTIVE);
-
-        long required = 0L;
-        for (ReceiveDirectoryRequest.FileEntry entry : request.getFiles()) {
-            required += FileSizeRule.requireValid(entry.getFileSize());
-        }
-        requireRoom(required);
-
         directoryTransferService.save(dt);
 
-        Path dirRoot = storageService.getUploadsDir().resolve(request.getDirectoryName());
-        for (String emptyDir : dt.getEmptyDirectories()) {
-            storageService.createDirectory(dirRoot.resolve(emptyDir));
+        for (String emptyDir : emptyDirectories) {
+            storageService.createDirectory(TransferPath.resolveRelative(dirRoot, emptyDir));
         }
 
         List<FileTransfer> fileTransfers = new ArrayList<>();
-        for (ReceiveDirectoryRequest.FileEntry entry : request.getFiles()) {
+        for (int i = 0; i < request.getFiles().size(); i++) {
+            ReceiveDirectoryRequest.FileEntry entry = request.getFiles().get(i);
             long fileSize = FileSizeRule.requireValid(entry.getFileSize());
             FileTransfer ft = FileTransfer.initiate(
                     entry.getTransferId(),
@@ -121,7 +134,7 @@ public class ChunkReceiverService {
             ft.setDirectoryName(request.getDirectoryName());
             ft.setStatus(TransferStatus.ACTIVE);
 
-            Path partialFile = storageService.resolvePartialPath(entry.getFileName());
+            Path partialFile = partialFiles.get(i);
             storageService.allocatePartialFile(partialFile, fileSize);
             ft.setFilePath(partialFile.toString());
             fileTransfers.add(ft);
@@ -136,7 +149,17 @@ public class ChunkReceiverService {
     }
 
     @Transactional
-    public void prepareReceiveBatch(ReceiveBatchRequest request) {
+    public void prepareReceiveBatch(ReceiveBatchRequest request, Object principal) {
+        TransferPartyGuard.requireSource(principal, request.getSourceDeviceId());
+        UUID deviceId = request.getSourceDeviceId();
+        long required = 0L;
+        List<Path> partialFiles = new ArrayList<>();
+        for (ReceiveBatchRequest.FileEntry entry : request.getFiles()) {
+            required += FileSizeRule.requireValid(entry.getFileSize());
+            partialFiles.add(resolvePartialLogged(entry.getFileName(), deviceId));
+        }
+        requireRoom(required);
+
         BatchTransfer bt = BatchTransfer.initiate(
                 request.getBatchTransferId(),
                 request.getDispatchId(),
@@ -148,17 +171,11 @@ public class ChunkReceiverService {
                 request.getTotalSize()
         );
         bt.setStatus(GroupTransferStatus.ACTIVE);
-
-        long required = 0L;
-        for (ReceiveBatchRequest.FileEntry entry : request.getFiles()) {
-            required += FileSizeRule.requireValid(entry.getFileSize());
-        }
-        requireRoom(required);
-
         batchTransferService.save(bt);
 
         List<FileTransfer> fileTransfers = new ArrayList<>();
-        for (ReceiveBatchRequest.FileEntry entry : request.getFiles()) {
+        for (int i = 0; i < request.getFiles().size(); i++) {
+            ReceiveBatchRequest.FileEntry entry = request.getFiles().get(i);
             long fileSize = FileSizeRule.requireValid(entry.getFileSize());
             FileTransfer ft = FileTransfer.initiate(
                     entry.getTransferId(),
@@ -171,7 +188,7 @@ public class ChunkReceiverService {
             ft.setBatchTransferId(request.getBatchTransferId());
             ft.setStatus(TransferStatus.ACTIVE);
 
-            Path partialFile = storageService.resolvePartialPath(entry.getFileName());
+            Path partialFile = partialFiles.get(i);
             storageService.allocatePartialFile(partialFile, fileSize);
             ft.setFilePath(partialFile.toString());
             fileTransfers.add(ft);
@@ -185,6 +202,33 @@ public class ChunkReceiverService {
         log.info("Prepared to receive batch: {} ({} files)", request.getBatchTransferId(), fileTransfers.size());
     }
 
+    private Path resolvePartialLogged(String fileName, UUID deviceId) {
+        try {
+            return storageService.resolvePartialPath(fileName);
+        } catch (InvalidRequestException e) {
+            TransferPath.logReject(log, e, deviceId, fileName);
+            throw e;
+        }
+    }
+
+    private Path resolveSegmentLogged(Path root, String segment, UUID deviceId) {
+        try {
+            return TransferPath.resolveSegment(root, segment);
+        } catch (InvalidRequestException e) {
+            TransferPath.logReject(log, e, deviceId, segment);
+            throw e;
+        }
+    }
+
+    private Path resolveRelativeLogged(Path root, String relativeText, UUID deviceId) {
+        try {
+            return TransferPath.resolveRelative(root, relativeText);
+        } catch (InvalidRequestException e) {
+            TransferPath.logReject(log, e, deviceId, relativeText);
+            throw e;
+        }
+    }
+
     /**
      * Hashes chunk bytes then writes. DB progress saved at most once per second, always on complete.
      */
@@ -193,9 +237,11 @@ public class ChunkReceiverService {
             long offset,
             long length,
             InputStream chunkStream,
-            String chunkSha256Header) {
+            String chunkSha256Header,
+            Object principal) {
         FileTransfer transfer = fileTransferService.findByTransferId(transferId)
                 .orElseThrow(() -> new FileTransferException("Transfer not found: " + transferId, null));
+        TransferPartyGuard.requireSource(principal, transfer.getSourceDeviceId());
 
         if (transfer.getStatus() == TransferStatus.PAUSED) {
             throw new TransferProtocolException(
@@ -461,19 +507,21 @@ public class ChunkReceiverService {
         });
     }
 
-    public long getConfirmedOffset(UUID transferId) {
+    public long getConfirmedOffset(UUID transferId, Object principal) {
+        FileTransfer transfer = fileTransferService.findByTransferId(transferId)
+                .orElseThrow(() -> new FileTransferException("Transfer not found: " + transferId, null));
+        TransferPartyGuard.requireSource(principal, transfer.getSourceDeviceId());
         Long live = liveConfirmedOffset.get(transferId);
         if (live != null) {
             return live;
         }
-        return fileTransferService.findByTransferId(transferId)
-                .orElseThrow(() -> new FileTransferException("Transfer not found: " + transferId, null))
-                .getConfirmedOffset();
+        return transfer.getConfirmedOffset();
     }
 
     @Transactional
-    public void cancelReceive(UUID transferId) {
+    public void cancelReceive(UUID transferId, Object principal) {
         fileTransferService.findByTransferId(transferId).ifPresent(ft -> {
+            TransferPartyGuard.requireParty(principal, ft.getSourceDeviceId(), ft.getTargetDeviceId());
             if (ft.getStatus() == TransferStatus.ACTIVE
                     || ft.getStatus() == TransferStatus.PAUSED) {
                 long live = liveConfirmedOffset.getOrDefault(transferId, ft.getConfirmedOffset());
@@ -493,8 +541,9 @@ public class ChunkReceiverService {
      * Peer fail-notify: mark receive side FAILED and delete partial.
      */
     @Transactional
-    public void failReceive(UUID transferId, String reason) {
+    public void failReceive(UUID transferId, String reason, Object principal) {
         fileTransferService.findByTransferId(transferId).ifPresent(ft -> {
+            TransferPartyGuard.requireParty(principal, ft.getSourceDeviceId(), ft.getTargetDeviceId());
             if (ft.getStatus() == TransferStatus.ACTIVE
                     || ft.getStatus() == TransferStatus.PAUSED
                     || ft.getStatus() == TransferStatus.PENDING) {

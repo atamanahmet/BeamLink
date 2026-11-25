@@ -279,17 +279,29 @@ public class TransferManagementService {
      * Applies pause from peer notify without echoing another notify.
      */
     public void applyPauseNotify(UUID transferId, PauseOwner pausedBy) {
-        applyPauseNotify(transferId, pausedBy, null);
+        applyPauseNotify(transferId, pausedBy, null, null);
     }
 
     /**
      * Applies pause from peer notify without echoing another notify.
      */
     public void applyPauseNotify(UUID transferId, PauseOwner pausedBy, String reason) {
+        applyPauseNotify(transferId, pausedBy, reason, null);
+    }
+
+    /**
+     * Applies pause from peer notify. Principal must be a party when set.
+     */
+    public void applyPauseNotify(
+            UUID transferId, PauseOwner pausedBy, String reason, Object principal) {
         if (pausedBy == null) {
             throw new InvalidRequestException("pausedBy required");
         }
         fileTransferService.findByTransferId(transferId).ifPresent(ft -> {
+            if (principal != null) {
+                TransferPartyGuard.requireParty(
+                        principal, ft.getSourceDeviceId(), ft.getTargetDeviceId());
+            }
             ft.setStatus(TransferStatus.PAUSED);
             ft.setPausedBy(PausedByResolver.resolvePausedBy(ft.getPausedBy(), pausedBy));
             if (reason != null && !reason.isBlank()) {
@@ -304,7 +316,18 @@ public class TransferManagementService {
      * Applies resume from peer notify and restarts send when this node is source.
      */
     public void applyResumeNotify(UUID transferId) {
+        applyResumeNotify(transferId, null);
+    }
+
+    /**
+     * Applies resume from peer notify. Principal must be a party when set.
+     */
+    public void applyResumeNotify(UUID transferId, Object principal) {
         fileTransferService.findByTransferId(transferId).ifPresent(ft -> {
+            if (principal != null) {
+                TransferPartyGuard.requireParty(
+                        principal, ft.getSourceDeviceId(), ft.getTargetDeviceId());
+            }
             ft.setPausedBy(null);
             ft.setStatus(TransferStatus.ACTIVE);
             fileTransferService.save(ft);

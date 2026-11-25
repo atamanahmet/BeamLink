@@ -168,6 +168,20 @@ public class TransferSenderService {
     }
 
     @Transactional
+    public void cancel(UUID transferId, Object principal) {
+        fileTransferService.findByTransferId(transferId).ifPresent(transfer -> {
+            TransferPartyGuard.requireParty(
+                    principal, transfer.getSourceDeviceId(), transfer.getTargetDeviceId());
+            if (transfer.getStatus() == TransferStatus.ACTIVE
+                    || transfer.getStatus() == TransferStatus.PAUSED) {
+                transfer.setStatus(TransferStatus.CANCELLED);
+                fileTransferService.save(transfer);
+                log.info("Transfer cancelled: {}", transferId);
+            }
+        });
+    }
+
+    @Transactional
     public void delete(UUID transferId) {
         fileTransferService.findByTransferId(transferId).ifPresent(transfer -> {
             TransferStatus s = transfer.getStatus();
@@ -198,8 +212,10 @@ public class TransferSenderService {
      * Peer fail-notify: mark local sender row FAILED without notifying back.
      */
     @Transactional
-    public void applyFailNotify(UUID transferId, String reason) {
+    public void applyFailNotify(UUID transferId, String reason, Object principal) {
         fileTransferService.findByTransferId(transferId).ifPresent(transfer -> {
+            TransferPartyGuard.requireParty(
+                    principal, transfer.getSourceDeviceId(), transfer.getTargetDeviceId());
             TransferStatus s = transfer.getStatus();
             if (s == TransferStatus.ACTIVE
                     || s == TransferStatus.PAUSED

@@ -148,7 +148,7 @@ class ProblemDetailMvcTest {
     @Test
     void pausedByBadValueIsBadRequestProblemJson() throws Exception {
         TransferManagementService mgmt = mock(TransferManagementService.class);
-        doCallRealMethod().when(mgmt).applyPauseNotify(any(), isNull(), nullable(String.class));
+        doCallRealMethod().when(mgmt).applyPauseNotify(any(), isNull(), nullable(String.class), any());
         MockMvc inbound = mvcFor(new TransferInboundController(
                 mock(ChunkReceiverService.class),
                 mock(TransferSenderService.class),

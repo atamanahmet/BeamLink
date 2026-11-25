@@ -43,7 +43,7 @@ class ChunkReceiverEmptyFileTest {
                 UUID.randomUUID(), UUID.randomUUID(), null, "empty.bin", null, 0L);
         transfer.setStatus(TransferStatus.ACTIVE);
 
-        receiver.prepareReceive(transfer);
+        receiver.prepareReceive(transfer, transfer.getSourceDeviceId());
 
         assertThat(transfer.getStatus()).isEqualTo(TransferStatus.COMPLETED);
         verify(storageService).allocatePartialFile(any(), eq(0L));
