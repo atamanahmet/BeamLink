@@ -5,6 +5,7 @@ import com.atamanahmet.beamlink.peer.domain.FileTransfer;
 import com.atamanahmet.beamlink.peer.domain.enums.TransferStatus;
 import com.atamanahmet.beamlink.peer.dto.*;
 import com.atamanahmet.beamlink.peer.exception.FileTransferException;
+import com.atamanahmet.beamlink.peer.security.PeerPrincipal;
 import com.atamanahmet.beamlink.peer.service.ChunkReceiverService;
 import com.atamanahmet.beamlink.peer.service.FileSizeRule;
 import com.atamanahmet.beamlink.peer.service.TransferManagementService;
@@ -12,10 +13,9 @@ import com.atamanahmet.beamlink.peer.service.TransferSenderService;
 import jakarta.servlet.http.HttpServletRequest;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
 
 import java.io.IOException;
@@ -36,7 +36,9 @@ public class TransferInboundController {
      * Source registers the transfer before sending any chunks, target prepares partial file on disk
      */
     @PostMapping("/receive")
-    public ResponseEntity<Void> prepareReceive(@RequestBody PrepareReceiveRequest request) {
+    public ResponseEntity<Void> prepareReceive(
+            @RequestBody PrepareReceiveRequest request,
+            @AuthenticationPrincipal PeerPrincipal principal) {
 
         long fileSize = FileSizeRule.requireValid(request.getFileSize());
         FileTransfer transfer = FileTransfer.initiate(
@@ -51,7 +53,7 @@ public class TransferInboundController {
         transfer.setSourcePort(request.getSourcePort());
         transfer.setStatus(TransferStatus.ACTIVE);
 
-        receiverService.prepareReceive(transfer);
+        receiverService.prepareReceive(transfer, callerDeviceId(principal));
 
         return ResponseEntity
                 .status(HttpStatus.OK)
@@ -63,9 +65,10 @@ public class TransferInboundController {
      */
     @PostMapping("/receive-directory")
     public ResponseEntity<Void> prepareReceiveDirectory(
-            @RequestBody ReceiveDirectoryRequest request) {
+            @RequestBody ReceiveDirectoryRequest request,
+            @AuthenticationPrincipal PeerPrincipal principal) {
 
-        receiverService.prepareReceiveDirectory(request);
+        receiverService.prepareReceiveDirectory(request, callerDeviceId(principal));
 
         return ResponseEntity
                 .status(HttpStatus.OK)
@@ -77,9 +80,10 @@ public class TransferInboundController {
      */
     @PostMapping("/receive-batch")
     public ResponseEntity<Void> prepareReceiveBatch(
-            @RequestBody ReceiveBatchRequest request) {
+            @RequestBody ReceiveBatchRequest request,
+            @AuthenticationPrincipal PeerPrincipal principal) {
 
-        receiverService.prepareReceiveBatch(request);
+        receiverService.prepareReceiveBatch(request, callerDeviceId(principal));
 
         return ResponseEntity
                 .status(HttpStatus.OK)
@@ -95,11 +99,17 @@ public class TransferInboundController {
             @RequestHeader("Content-Range") String contentRange,
             @RequestHeader(value = TransferConstants.CHUNK_SHA256_HEADER, required = false)
             String chunkSha256,
-            HttpServletRequest request) throws IOException {
+            HttpServletRequest request,
+            @AuthenticationPrincipal PeerPrincipal principal) throws IOException {
 
         long[] range = parseContentRange(contentRange);
         ChunkAckResponse ack = receiverService.receiveChunk(
-                transferId, range[0], range[1], request.getInputStream(), chunkSha256);
+                transferId,
+                range[0],
+                range[1],
+                request.getInputStream(),
+                chunkSha256,
+                callerDeviceId(principal));
 
         return ResponseEntity
                 .status(HttpStatus.OK)
@@ -110,8 +120,11 @@ public class TransferInboundController {
      * Source queries confirmed offset before resuming a paused transfer
      */
     @GetMapping("/{transferId}/offset")
-    public ResponseEntity<Map<String, Long>> getOffset(@PathVariable UUID transferId) {
-        long confirmedOffset = receiverService.getConfirmedOffset(transferId);
+    public ResponseEntity<Map<String, Long>> getOffset(
+            @PathVariable UUID transferId,
+            @AuthenticationPrincipal PeerPrincipal principal) {
+        long confirmedOffset = receiverService.getConfirmedOffset(
+                transferId, callerDeviceId(principal));
 
         return ResponseEntity
                 .status(HttpStatus.OK)
@@ -144,9 +157,12 @@ public class TransferInboundController {
      * Peer notifies us to cancel our side of the transfer
      */
     @DeleteMapping("/{transferId}/cancel-notify")
-    public ResponseEntity<Void> cancelNotify(@PathVariable UUID transferId) {
-        receiverService.cancelReceive(transferId);
-        senderService.cancel(transferId);
+    public ResponseEntity<Void> cancelNotify(
+            @PathVariable UUID transferId,
+            @AuthenticationPrincipal PeerPrincipal principal) {
+        UUID caller = callerDeviceId(principal);
+        receiverService.cancelReceive(transferId, caller);
+        senderService.applyCancelNotify(transferId, caller);
         return ResponseEntity.ok().build();
     }
 
@@ -156,10 +172,12 @@ public class TransferInboundController {
     @PostMapping("/{transferId}/fail-notify")
     public ResponseEntity<Void> failNotify(
             @PathVariable UUID transferId,
-            @RequestBody Map<String, String> body) {
+            @RequestBody Map<String, String> body,
+            @AuthenticationPrincipal PeerPrincipal principal) {
         String reason = body != null ? body.get("reason") : null;
-        receiverService.failReceive(transferId, reason);
-        senderService.applyFailNotify(transferId, reason);
+        UUID caller = callerDeviceId(principal);
+        receiverService.failReceive(transferId, reason, caller);
+        senderService.applyFailNotify(transferId, reason, caller);
         return ResponseEntity.ok().build();
     }
 
@@ -169,8 +187,10 @@ public class TransferInboundController {
     @PostMapping("/{transferId}/pause-notify")
     public ResponseEntity<Void> pauseNotify(
             @PathVariable UUID transferId,
-            @RequestBody PauseNotifyRequest request) {
-        managementService.applyPauseNotify(transferId, request.getPausedBy(), request.getReason());
+            @RequestBody PauseNotifyRequest request,
+            @AuthenticationPrincipal PeerPrincipal principal) {
+        managementService.applyPauseNotify(
+                transferId, request.getPausedBy(), request.getReason(), callerDeviceId(principal));
         return ResponseEntity.ok().build();
     }
 
@@ -178,8 +198,14 @@ public class TransferInboundController {
      * Peer notifies us to resume our side of the transfer
      */
     @PostMapping("/{transferId}/resume-notify")
-    public ResponseEntity<Void> resumeNotify(@PathVariable UUID transferId) {
-        managementService.applyResumeNotify(transferId);
+    public ResponseEntity<Void> resumeNotify(
+            @PathVariable UUID transferId,
+            @AuthenticationPrincipal PeerPrincipal principal) {
+        managementService.applyResumeNotify(transferId, callerDeviceId(principal));
         return ResponseEntity.ok().build();
+    }
+
+    private static UUID callerDeviceId(PeerPrincipal principal) {
+        return principal == null ? null : principal.deviceId();
     }
 }

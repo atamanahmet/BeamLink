@@ -207,6 +207,19 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
                 e);
     }
 
+    /**
+     * Maps ForbiddenException to 403 problem+json.
+     */
+    @ExceptionHandler(ForbiddenException.class)
+    public ResponseEntity<ProblemDetail> handleForbidden(ForbiddenException e) {
+        return problem(
+                HttpStatus.FORBIDDEN,
+                "Forbidden",
+                e.getMessage() != null ? e.getMessage() : "Access denied",
+                e.getCode() != null ? e.getCode() : "FORBIDDEN",
+                e);
+    }
+
     @ExceptionHandler(NexusTlsPinMismatchException.class)
     public ResponseEntity<ProblemDetail> handlePinMismatch(NexusTlsPinMismatchException e) {
         return problem(

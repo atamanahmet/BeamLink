@@ -5,6 +5,7 @@ import com.atamanahmet.beamlink.peer.dto.InitiateSendRequest;
 import com.atamanahmet.beamlink.peer.domain.enums.TransferType;
 import com.atamanahmet.beamlink.peer.dto.*;
 import com.atamanahmet.beamlink.peer.exception.FileTransferException;
+import com.atamanahmet.beamlink.peer.exception.InvalidRequestException;
 
 import lombok.RequiredArgsConstructor;
 
@@ -35,6 +36,9 @@ public class TransferDispatchService {
 
     /** One dispatchId groups all transfers from this single send action */
     public InitiateSendResponse dispatch(InitiateSendRequest request) {
+        if (request.getTargetDeviceId() == null) {
+            throw new InvalidRequestException("targetDeviceId required", "TARGET_DEVICE_ID_REQUIRED");
+        }
         if (request.getPaths() == null || request.getPaths().isEmpty()) {
             throw new FileTransferException("No paths provided", null);
         }

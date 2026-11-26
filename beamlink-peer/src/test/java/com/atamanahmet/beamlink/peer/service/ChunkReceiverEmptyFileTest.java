@@ -43,11 +43,12 @@ class ChunkReceiverEmptyFileTest {
                 mock(TransferProperties.class),
                 provider);
 
+        UUID source = UUID.randomUUID();
         FileTransfer transfer = FileTransfer.initiate(
-                UUID.randomUUID(), UUID.randomUUID(), null, "empty.bin", null, 0L);
+                UUID.randomUUID(), source, null, "empty.bin", null, 0L);
         transfer.setStatus(TransferStatus.ACTIVE);
 
-        receiver.prepareReceive(transfer);
+        receiver.prepareReceive(transfer, source);
 
         assertThat(transfer.getStatus()).isEqualTo(TransferStatus.COMPLETED);
         verify(storageService).allocatePartialFile(any(), eq(0L));

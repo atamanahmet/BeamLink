@@ -278,18 +278,21 @@ public class TransferManagementService {
     /**
      * Applies pause from peer notify without echoing another notify.
      */
-    public void applyPauseNotify(UUID transferId, PauseOwner pausedBy) {
-        applyPauseNotify(transferId, pausedBy, null);
+    public void applyPauseNotify(UUID transferId, PauseOwner pausedBy, UUID callerDeviceId) {
+        applyPauseNotify(transferId, pausedBy, null, callerDeviceId);
     }
 
     /**
      * Applies pause from peer notify without echoing another notify.
      */
-    public void applyPauseNotify(UUID transferId, PauseOwner pausedBy, String reason) {
+    public void applyPauseNotify(
+            UUID transferId, PauseOwner pausedBy, String reason, UUID callerDeviceId) {
         if (pausedBy == null) {
             throw new InvalidRequestException("pausedBy required");
         }
         fileTransferService.findByTransferId(transferId).ifPresent(ft -> {
+            TransferPartyGuard.requireParty(
+                    callerDeviceId, ft.getSourceDeviceId(), ft.getTargetDeviceId());
             ft.setStatus(TransferStatus.PAUSED);
             ft.setPausedBy(PausedByResolver.resolvePausedBy(ft.getPausedBy(), pausedBy));
             if (reason != null && !reason.isBlank()) {
@@ -303,8 +306,10 @@ public class TransferManagementService {
     /**
      * Applies resume from peer notify and restarts send when this node is source.
      */
-    public void applyResumeNotify(UUID transferId) {
+    public void applyResumeNotify(UUID transferId, UUID callerDeviceId) {
         fileTransferService.findByTransferId(transferId).ifPresent(ft -> {
+            TransferPartyGuard.requireParty(
+                    callerDeviceId, ft.getSourceDeviceId(), ft.getTargetDeviceId());
             ft.setPausedBy(null);
             ft.setStatus(TransferStatus.ACTIVE);
             fileTransferService.save(ft);

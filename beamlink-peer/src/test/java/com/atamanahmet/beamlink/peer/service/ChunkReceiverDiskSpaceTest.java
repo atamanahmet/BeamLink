@@ -38,10 +38,11 @@ class ChunkReceiverDiskSpaceTest {
                 mock(TransferProperties.class),
                 provider);
 
+        UUID source = UUID.randomUUID();
         FileTransfer transfer = FileTransfer.initiate(
-                UUID.randomUUID(), UUID.randomUUID(), null, "a.bin", null, 1024L);
+                UUID.randomUUID(), source, null, "a.bin", null, 1024L);
 
-        assertThatThrownBy(() -> receiver.prepareReceive(transfer))
+        assertThatThrownBy(() -> receiver.prepareReceive(transfer, source))
                 .isInstanceOf(InsufficientDiskException.class);
         verify(storageService, never()).allocatePartialFile(any(), anyLong());
     }

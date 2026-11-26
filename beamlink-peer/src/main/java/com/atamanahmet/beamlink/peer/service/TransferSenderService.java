@@ -51,7 +51,7 @@ public class TransferSenderService {
         }
 
         UUID transferId = UUID.randomUUID();
-        String fileName = filePath.getFileName().toString();
+        String fileName = TransferPath.join(filePath.getFileName());
 
         FileTransfer transfer = FileTransfer.initiate(
                 transferId,
@@ -147,14 +147,31 @@ public class TransferSenderService {
 
     @Transactional
     public void cancel(UUID transferId) {
+        fileTransferService.findByTransferId(transferId).ifPresent(this::cancelIfActiveOrPaused);
+    }
+
+    /**
+     * Peer cancel-notify: cancel after a party check.
+     */
+    @Transactional
+    public void applyCancelNotify(UUID transferId, UUID callerDeviceId) {
         fileTransferService.findByTransferId(transferId).ifPresent(transfer -> {
-            if (transfer.getStatus() == TransferStatus.ACTIVE
-                    || transfer.getStatus() == TransferStatus.PAUSED) {
-                transfer.setStatus(TransferStatus.CANCELLED);
-                fileTransferService.save(transfer);
-                log.info("Transfer cancelled: {}", transferId);
-            }
+            TransferPartyGuard.requireParty(
+                    callerDeviceId, transfer.getSourceDeviceId(), transfer.getTargetDeviceId());
+            cancelIfActiveOrPaused(transfer);
         });
+    }
+
+    /**
+     * Marks ACTIVE or PAUSED as CANCELLED.
+     */
+    private void cancelIfActiveOrPaused(FileTransfer transfer) {
+        if (transfer.getStatus() == TransferStatus.ACTIVE
+                || transfer.getStatus() == TransferStatus.PAUSED) {
+            transfer.setStatus(TransferStatus.CANCELLED);
+            fileTransferService.save(transfer);
+            log.info("Transfer cancelled: {}", transfer.getTransferId());
+        }
     }
 
     /** Only terminal state transfers can be deleted. */
@@ -189,8 +206,10 @@ public class TransferSenderService {
      * Peer fail-notify: mark local sender row FAILED without notifying back.
      */
     @Transactional
-    public void applyFailNotify(UUID transferId, String reason) {
+    public void applyFailNotify(UUID transferId, String reason, UUID callerDeviceId) {
         fileTransferService.findByTransferId(transferId).ifPresent(transfer -> {
+            TransferPartyGuard.requireParty(
+                    callerDeviceId, transfer.getSourceDeviceId(), transfer.getTargetDeviceId());
             TransferStatus s = transfer.getStatus();
             if (s == TransferStatus.ACTIVE
                     || s == TransferStatus.PAUSED
