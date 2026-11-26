@@ -57,7 +57,7 @@ public class DirectorySenderService {
         }
         UUID directoryTransferId = UUID.randomUUID();
         UUID sourceDeviceId = deviceService.getDeviceId();
-        String directoryName = sourceDir.getFileName().toString();
+        String directoryName = TransferPath.join(sourceDir.getFileName());
 
         directoryTransferService.create(
                 directoryTransferId,
@@ -78,8 +78,8 @@ public class DirectorySenderService {
 
         for (WalkResult.FileEntry entry : walk.files()) {
             UUID transferId = UUID.randomUUID();
-            String fileName = entry.absolutePath().getFileName().toString();
-            String relativePath = sourceDir.relativize(entry.absolutePath()).toString();
+            String fileName = TransferPath.join(entry.absolutePath().getFileName());
+            String relativePath = TransferPath.join(sourceDir.relativize(entry.absolutePath()));
 
             FileTransfer ft = FileTransfer.initiate(
                     transferId,
@@ -199,7 +199,7 @@ public class DirectorySenderService {
                         return FileVisitResult.CONTINUE;
                     }
                     if (!dirsWithFiles.contains(dir)) {
-                        emptyDirectories.add(root.relativize(dir).toString());
+                        emptyDirectories.add(TransferPath.join(root.relativize(dir)));
                     }
                     return FileVisitResult.CONTINUE;
                 }

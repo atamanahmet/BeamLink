@@ -66,11 +66,12 @@ public class BatchSenderService {
         for (ValidatedFile vf : validatedFiles) {
             UUID transferId = UUID.randomUUID();
 
+            String fileName = TransferPath.join(vf.path.getFileName());
             FileTransfer ft = FileTransfer.initiate(
                     transferId,
                     sourceDeviceId,
                     request.getTargetDeviceId(),
-                    vf.path.getFileName().toString(),
+                    fileName,
                     vf.path.toString(),
                     vf.fileSize
             );
@@ -82,7 +83,7 @@ public class BatchSenderService {
 
             ReceiveBatchRequest.FileEntry fe = new ReceiveBatchRequest.FileEntry();
             fe.setTransferId(transferId);
-            fe.setFileName(vf.path.getFileName().toString());
+            fe.setFileName(fileName);
             fe.setFileSize(vf.fileSize);
             fileEntries.add(fe);
         }

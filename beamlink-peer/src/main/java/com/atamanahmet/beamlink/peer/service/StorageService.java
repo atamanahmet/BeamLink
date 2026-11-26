@@ -4,6 +4,7 @@ import com.atamanahmet.beamlink.peer.config.StorageConfig;
 import com.atamanahmet.beamlink.peer.domain.FileTransfer;
 import com.atamanahmet.beamlink.peer.domain.enums.SettingKey;
 import com.atamanahmet.beamlink.peer.exception.InsufficientDiskSpaceException;
+import com.atamanahmet.beamlink.peer.exception.InvalidRequestException;
 import jakarta.annotation.PostConstruct;
 import lombok.Getter;
 import lombok.RequiredArgsConstructor;
@@ -92,7 +93,11 @@ public class StorageService {
 
     public Path resolvePartialPath(String fileName) {
         ensurePartialDir();
-        return getPartialDir().resolve(fileName + ".part");
+        String rule = TransferPath.segmentRule(fileName);
+        if (rule != null) {
+            throw new InvalidRequestException(TransferPath.DETAIL, rule);
+        }
+        return TransferPath.resolveSegment(getPartialDir(), fileName + ".part");
     }
 
     /**
@@ -101,7 +106,10 @@ public class StorageService {
     public Path storedPartialPath(FileTransfer transfer) {
         String stored = transfer.getFilePath();
         if (stored != null && !stored.isBlank()) {
-            return Path.of(stored);
+            Path candidate = Path.of(stored).toAbsolutePath().normalize();
+            Path partialRoot = getPartialDir().toAbsolutePath().normalize();
+            TransferPath.assertUnderRoot(partialRoot, candidate);
+            return candidate;
         }
         return resolvePartialPath(transfer.getFileName());
     }
@@ -125,11 +133,10 @@ public class StorageService {
 
         Path finalPath;
         if (transfer.getRelativePath() != null && transfer.getDirectoryName() != null) {
-            finalPath = uploadsDir
-                    .resolve(transfer.getDirectoryName())
-                    .resolve(transfer.getRelativePath());
+            Path dirRoot = TransferPath.resolveSegment(uploadsDir, transfer.getDirectoryName());
+            finalPath = TransferPath.resolveRelative(dirRoot, transfer.getRelativePath());
         } else {
-            finalPath = uploadsDir.resolve(transfer.getFileName());
+            finalPath = TransferPath.resolveSegment(uploadsDir, transfer.getFileName());
         }
 
         try {
@@ -159,8 +166,16 @@ public class StorageService {
      * Deletes the stored partial path for this row.
      */
     public void deletePartialFile(FileTransfer transfer) {
+        Path path;
         try {
-            Files.deleteIfExists(storedPartialPath(transfer));
+            path = storedPartialPath(transfer);
+        } catch (InvalidRequestException e) {
+            log.warn("Skipping partial delete for transfer {} rule={}",
+                    transfer.getTransferId(), e.getCode());
+            return;
+        }
+        try {
+            Files.deleteIfExists(path);
         } catch (IOException e) {
             log.warn("Could not delete partial file for: {}", transfer.getFileName());
         }
