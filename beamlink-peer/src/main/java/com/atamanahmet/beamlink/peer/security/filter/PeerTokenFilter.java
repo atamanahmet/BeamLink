@@ -2,6 +2,7 @@ package com.atamanahmet.beamlink.peer.security.filter;
 
 import com.atamanahmet.beamlink.peer.exception.ErrorReason;
 import com.atamanahmet.beamlink.peer.exception.ProblemDetailWriter;
+import com.atamanahmet.beamlink.peer.security.PeerPrincipal;
 import com.atamanahmet.beamlink.peer.security.PeerTokenVerifier;
 import com.atamanahmet.beamlink.peer.service.DeviceService;
 import jakarta.servlet.FilterChain;
@@ -19,6 +20,7 @@ import org.springframework.web.filter.OncePerRequestFilter;
 
 import java.io.IOException;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 
 /**
@@ -71,8 +73,9 @@ public class PeerTokenFilter extends OncePerRequestFilter {
                             "NOT_APPROVED",
                             ErrorReason.UNKNOWN);
                 } else {
-                    boolean valid = peerTokenVerifier.verify(publicToken, claimedPublicId, nexusPublicKey);
-                    if (!valid) {
+                    Optional<PeerPrincipal> principal = peerTokenVerifier.verify(
+                            publicToken, claimedPublicId, nexusPublicKey);
+                    if (principal.isEmpty()) {
                         log.warn("Peer token verification failed for publicId={} on {}", claimedPublicId, request.getRequestURI());
                         ProblemDetailWriter.write(
                                 response,
@@ -82,7 +85,11 @@ public class PeerTokenFilter extends OncePerRequestFilter {
                                 "UNAUTHORIZED",
                                 ErrorReason.UNKNOWN);
                     } else {
-                        SecurityContextHolder.getContext().setAuthentication(new UsernamePasswordAuthenticationToken(claimedPublicId.toString(), (Object)null, List.of(new SimpleGrantedAuthority("ROLE_PEER"))));
+                        SecurityContextHolder.getContext().setAuthentication(
+                                new UsernamePasswordAuthenticationToken(
+                                        principal.get(),
+                                        null,
+                                        List.of(new SimpleGrantedAuthority("ROLE_PEER"))));
                         chain.doFilter(request, response);
                     }
                 }

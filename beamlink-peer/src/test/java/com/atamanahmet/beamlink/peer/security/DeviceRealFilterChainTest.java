@@ -41,6 +41,7 @@ class DeviceRealFilterChainTest {
     private static final RSAPrivateKey rsaPrivate;
     private static final String nexusPublicKeyB64;
     private static final UUID peerPublicId = UUID.randomUUID();
+    private static final UUID peerDeviceId = UUID.randomUUID();
     private static final String peerJwt;
 
     static {
@@ -59,6 +60,7 @@ class DeviceRealFilterChainTest {
             nexusPublicKeyB64 = Base64.getEncoder().encodeToString(rsaPublic.getEncoded());
             peerJwt = JWT.create()
                     .withIssuer("beamlink-nexus")
+                    .withSubject(peerDeviceId.toString())
                     .withClaim("type", TokenType.DEVICE_PUBLIC.name())
                     .withClaim("publicId", peerPublicId.toString())
                     .sign(Algorithm.RSA256(rsaPublic, rsaPrivate));
