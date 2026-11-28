@@ -7,13 +7,16 @@ import com.auth0.jwt.interfaces.DecodedJWT
 import com.auth0.jwt.interfaces.JWTVerifier
 import android.util.Log
 import com.beamlink.peer.config.DeviceDefaults
+import com.beamlink.peer.exception.ForbiddenException
 import com.beamlink.peer.exception.InvalidRequestException
 import com.beamlink.peer.exception.ProblemStatusMapper
 import com.beamlink.peer.net.AddressGuard
+import com.beamlink.peer.security.PeerJwtSubject
 import com.beamlink.peer.security.PhoneTlsCert
 import com.beamlink.peer.security.PhoneTlsKeyManager
 import com.beamlink.peer.security.TokenStore
 import com.beamlink.peer.send.TransferForegroundService
+import com.beamlink.peer.service.TransferPartyGuard
 import io.ktor.http.ContentType
 import io.ktor.http.HttpStatusCode
 import io.ktor.http.auth.HttpAuthHeader
@@ -25,6 +28,7 @@ import io.ktor.server.auth.Authentication
 import io.ktor.server.auth.authenticate
 import io.ktor.server.auth.jwt.JWTPrincipal
 import io.ktor.server.auth.jwt.jwt
+import io.ktor.server.auth.principal
 import io.ktor.server.engine.EmbeddedServer
 import io.ktor.server.engine.connector
 import io.ktor.server.engine.embeddedServer
@@ -33,6 +37,7 @@ import io.netty.handler.ssl.SslContextBuilder
 import io.netty.handler.ssl.SslHandler
 import io.ktor.server.plugins.origin
 import io.ktor.server.plugins.statuspages.StatusPages
+import io.ktor.server.request.contentLength
 import io.ktor.server.request.header
 import io.ktor.server.request.path
 import io.ktor.server.request.receive
@@ -135,6 +140,17 @@ class ReceiveServer(
                 exception<ProtocolException> { call, cause ->
                     call.respondProblem(cause.status, ProtocolErrorBodies.toJson(cause))
                 }
+                exception<ForbiddenException> { call, cause ->
+                    call.respondProblem(
+                        403,
+                        ProtocolErrorBodies.of(
+                            403,
+                            "Forbidden",
+                            cause.message ?: TransferPartyGuard.DETAIL,
+                            cause.code.ifBlank { TransferPartyGuard.CODE },
+                        ),
+                    )
+                }
                 exception<InvalidRequestException> { call, cause ->
                     val mapped = ProblemStatusMapper.map(cause)
                     call.respondProblem(
@@ -205,6 +221,9 @@ class ReceiveServer(
                         if (type != "DEVICE_PUBLIC") {
                             return@validate null
                         }
+                        if (PeerJwtSubject.parseUuidOrNull(cred.payload.subject) == null) {
+                            return@validate null
+                        }
                         val claimId = cred.payload.getClaim("publicId").asString()
                         val headerId = request.header("X-Public-Id")
                         if (claimId.isNullOrBlank() || headerId.isNullOrBlank() || claimId != headerId) {
@@ -248,6 +267,7 @@ class ReceiveServer(
             routing {
                 authenticate("peer") {
                     post("/api/transfers/receive") {
+                        val caller = call.callerDeviceId()
                         val json = JSONObject(call.receiveText())
                         receiver.prepare(
                             transferId = parseUuid(json.getString("transferId")),
@@ -261,10 +281,12 @@ class ReceiveServer(
                                 null
                             },
                             batchTransferId = null,
+                            callerDeviceId = caller,
                         )
                         call.respond(HttpStatusCode.OK)
                     }
                     post("/api/transfers/receive-batch") {
+                        val caller = call.callerDeviceId()
                         val json = JSONObject(call.receiveText())
                         val filesJson = json.getJSONArray("files")
                         val files = ArrayList<ChunkReceiver.BatchFile>()
@@ -284,7 +306,7 @@ class ReceiveServer(
                                 ),
                             )
                         }
-                        receiver.prepareBatch(json.optLong("totalSize", 0L), files)
+                        receiver.prepareBatch(json.optLong("totalSize", 0L), files, caller)
                         call.respond(HttpStatusCode.OK)
                     }
                     post("/api/transfers/receive-directory") {
@@ -299,11 +321,24 @@ class ReceiveServer(
                         )
                     }
                     patch("/api/transfers/{transferId}/chunk") {
+                        val caller = call.callerDeviceId()
                         val id = parseUuid(call.parameters["transferId"])
                         val range = ContentRangeParser.parse(call.request.header("Content-Range"))
                         val sha = call.request.header(DeviceDefaults.CHUNK_SHA256_HEADER)
+                        ChunkBodyLengthRule.requireBeforeReceive(
+                            call.request.contentLength(),
+                            range.length,
+                        )
                         val body = call.receive<ByteArray>()
-                        val ack = receiver.receiveChunk(id, range.start, range.length, body, sha)
+                        ChunkBodyLengthRule.requireAfterReceive(body.size, range.length)
+                        val ack = receiver.receiveChunk(
+                            id,
+                            range.start,
+                            range.length,
+                            body,
+                            sha,
+                            caller,
+                        )
                         call.respondJson(
                             200,
                             JSONObject()
@@ -312,25 +347,29 @@ class ReceiveServer(
                         )
                     }
                     get("/api/transfers/{transferId}/offset") {
+                        val caller = call.callerDeviceId()
                         val id = parseUuid(call.parameters["transferId"])
-                        val offset = receiver.confirmedOffset(id)
+                        val offset = receiver.confirmedOffset(id, caller)
                         call.respondJson(
                             200,
                             JSONObject().put("confirmedOffset", offset),
                         )
                     }
                     delete("/api/transfers/{transferId}/cancel-notify") {
+                        val caller = call.callerDeviceId()
                         val id = parseUuid(call.parameters["transferId"])
-                        receiver.cancel(id)
+                        receiver.cancel(id, caller)
                         call.respond(HttpStatusCode.OK)
                     }
                     post("/api/transfers/{transferId}/fail-notify") {
+                        val caller = call.callerDeviceId()
                         val id = parseUuid(call.parameters["transferId"])
                         val json = JSONObject(call.receiveText().ifBlank { "{}" })
-                        receiver.fail(id, JsonStrings.optional(json, "reason"))
+                        receiver.fail(id, JsonStrings.optional(json, "reason"), caller)
                         call.respond(HttpStatusCode.OK)
                     }
                     post("/api/transfers/{transferId}/pause-notify") {
+                        val caller = call.callerDeviceId()
                         val id = parseUuid(call.parameters["transferId"])
                         val json = JSONObject(call.receiveText().ifBlank { "{}" })
                         val pausedBy = json.optString("pausedBy", "")
@@ -338,14 +377,15 @@ class ReceiveServer(
                             throw InvalidRequestException("pausedBy required")
                         }
                         val reason = json.optString("reason", "").ifBlank { null }
-                        if (!receiver.pause(id, pausedBy, reason)) {
-                            TransferForegroundService.applyPeerPause(id, reason)
+                        if (!receiver.pause(id, pausedBy, reason, caller)) {
+                            TransferForegroundService.applyPeerPause(id, reason, caller)
                         }
                         call.respond(HttpStatusCode.OK)
                     }
                     post("/api/transfers/{transferId}/resume-notify") {
+                        val caller = call.callerDeviceId()
                         val id = parseUuid(call.parameters["transferId"])
-                        receiver.resume(id)
+                        receiver.resume(id, caller)
                         call.respond(HttpStatusCode.OK)
                     }
                 }
@@ -397,6 +437,16 @@ private suspend fun ApplicationCall.respondProblem(status: Int, json: JSONObject
         ContentType.parse(ProblemStatusMapper.CONTENT_TYPE),
         HttpStatusCode.fromValue(status),
     )
+}
+
+/**
+ * Reads the verified JWT subject as the caller device id.
+ */
+private fun ApplicationCall.callerDeviceId(): UUID {
+    val principal = principal<JWTPrincipal>()
+        ?: throw ForbiddenException(TransferPartyGuard.DETAIL, TransferPartyGuard.CODE)
+    return PeerJwtSubject.parseUuidOrNull(principal.payload.subject)
+        ?: throw ForbiddenException(TransferPartyGuard.DETAIL, TransferPartyGuard.CODE)
 }
 
 /**

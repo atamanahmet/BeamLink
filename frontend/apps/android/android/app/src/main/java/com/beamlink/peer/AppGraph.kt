@@ -85,7 +85,7 @@ object AppGraph {
             emitSession(session)
         }
         receiveStallWatchdog = ReceiveStallWatchdog(sessions, stallTracker) { id ->
-            chunkReceiver.pause(id, "TARGET")
+            chunkReceiver.pauseLocal(id, "TARGET")
         }
         receiveServer = ReceiveServer(chunkReceiver, tokenStore, phoneTlsCert)
         receiveCancel = ReceiveCancel(sessions, chunkReceiver, tokenStore)

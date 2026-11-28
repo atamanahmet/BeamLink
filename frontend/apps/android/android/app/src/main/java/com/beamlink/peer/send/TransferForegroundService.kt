@@ -17,6 +17,7 @@ import com.beamlink.peer.event.ProgressBus
 import com.beamlink.peer.net.PeerTransferClient
 import com.beamlink.peer.receive.DiskReserve
 import com.beamlink.peer.security.TokenStore
+import com.beamlink.peer.service.TransferPartyGuard
 import com.beamlink.peer.util.WifiIpv4
 import java.util.UUID
 import java.util.concurrent.Executors
@@ -89,6 +90,7 @@ class TransferForegroundService : Service() {
         paused.set(false)
         pauseReason.set(null)
         pauseHandler = this::onPeerPause
+        liveJob = job
         if (!resume) {
             pausedJob = null
         }
@@ -97,6 +99,7 @@ class TransferForegroundService : Service() {
             try {
                 runSend(job, resume)
             } finally {
+                liveJob = null
                 sending.set(false)
                 stopForeground(STOP_FOREGROUND_REMOVE)
                 stopSelf()
@@ -361,6 +364,9 @@ class TransferForegroundService : Service() {
         @Volatile
         private var pausedJob: SendJob? = null
 
+        @Volatile
+        private var liveJob: SendJob? = null
+
         private val sending = AtomicBoolean(false)
         const val EXTRA_URIS = "uris"
         const val EXTRA_NAMES = "names"
@@ -384,8 +390,21 @@ class TransferForegroundService : Service() {
         /**
          * Applies pause-notify to the live send slot when the id matches.
          */
-        fun applyPeerPause(transferId: UUID, reason: String?) {
+        fun applyPeerPause(transferId: UUID, reason: String?, callerDeviceId: UUID) {
+            TransferPartyGuard.requireParty(callerDeviceId, null, targetDeviceIdFor(transferId))
             pauseHandler?.invoke(transferId, reason)
+        }
+
+        private fun targetDeviceIdFor(transferId: UUID): String? {
+            val live = liveJob
+            if (live != null && live.transferId == transferId) {
+                return live.targetDeviceId
+            }
+            val paused = pausedJob
+            if (paused != null && paused.transferId == transferId) {
+                return paused.targetDeviceId
+            }
+            return null
         }
 
         /**

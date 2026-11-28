@@ -9,6 +9,7 @@ import com.beamlink.peer.net.NexusClient
 import com.beamlink.peer.net.PeerTransferClient
 import com.beamlink.peer.register.NexusPrefs
 import com.beamlink.peer.security.TokenStore
+import com.beamlink.peer.service.TransferPartyGuard
 import com.beamlink.peer.util.FileNameSanitizer
 import org.json.JSONObject
 import java.io.File
@@ -46,7 +47,55 @@ class ChunkReceiver(
         sourceIp: String?,
         sourcePort: Int?,
         batchTransferId: UUID?,
-        skipDiskCheck: Boolean = false,
+        callerDeviceId: UUID,
+    ) {
+        TransferPartyGuard.requireSource(callerDeviceId, sourceDeviceId)
+        prepareBody(
+            transferId,
+            fileName,
+            fileSize,
+            sourceDeviceId,
+            sourceIp,
+            sourcePort,
+            batchTransferId,
+            skipDiskCheck = false,
+        )
+    }
+
+    /**
+     * One disk check for the real file-size sum, then prepare each file.
+     */
+    fun prepareBatch(totalSize: Long, files: List<BatchFile>, callerDeviceId: UUID) {
+        val batchSource = files.firstOrNull()?.sourceDeviceId
+        TransferPartyGuard.requireSource(callerDeviceId, batchSource)
+        val required = BatchDiskNeed.requiredBytes(files.map { it.fileSize }, totalSize)
+        if (!hasRoom(required)) {
+            throw ProtocolException(DiskReserve.CODE, DiskReserve.DETAIL, 507)
+        }
+        rejectIfBusy(files.map { it.transferId }.toSet())
+        for (file in files) {
+            prepareBody(
+                transferId = file.transferId,
+                fileName = file.fileName,
+                fileSize = file.fileSize,
+                sourceDeviceId = file.sourceDeviceId,
+                sourceIp = file.sourceIp,
+                sourcePort = file.sourcePort,
+                batchTransferId = file.batchTransferId,
+                skipDiskCheck = true,
+            )
+        }
+    }
+
+    private fun prepareBody(
+        transferId: UUID,
+        fileName: String,
+        fileSize: Long,
+        sourceDeviceId: String?,
+        sourceIp: String?,
+        sourcePort: Int?,
+        batchTransferId: UUID?,
+        skipDiskCheck: Boolean,
     ) {
         FileSizeRule.requireValid(fileSize)
         if (!skipDiskCheck) {
@@ -85,36 +134,6 @@ class ChunkReceiver(
     }
 
     /**
-     * One disk check for the batch total, then prepare each file.
-     */
-    fun prepareBatch(totalSize: Long, files: List<BatchFile>) {
-        var required = 0L
-        for (file in files) {
-            FileSizeRule.requireValid(file.fileSize)
-            required += file.fileSize
-        }
-        if (totalSize > 0L) {
-            required = totalSize
-        }
-        if (!hasRoom(required)) {
-            throw ProtocolException(DiskReserve.CODE, DiskReserve.DETAIL, 507)
-        }
-        rejectIfBusy(files.map { it.transferId }.toSet())
-        for (file in files) {
-            prepare(
-                transferId = file.transferId,
-                fileName = file.fileName,
-                fileSize = file.fileSize,
-                sourceDeviceId = file.sourceDeviceId,
-                sourceIp = file.sourceIp,
-                sourcePort = file.sourcePort,
-                batchTransferId = file.batchTransferId,
-                skipDiskCheck = true,
-            )
-        }
-    }
-
-    /**
      * Hashes chunk bytes then writes at offset.
      */
     fun receiveChunk(
@@ -123,8 +142,10 @@ class ChunkReceiver(
         length: Long,
         chunkBytes: ByteArray,
         chunkSha256Header: String?,
+        callerDeviceId: UUID,
     ): ChunkAck {
         val session = store.require(transferId)
+        TransferPartyGuard.requireSource(callerDeviceId, session.sourceDeviceId)
         if (session.status == ReceiveSession.PAUSED) {
             throw ProtocolException(
                 "TRANSFER_PAUSED",
@@ -211,15 +232,30 @@ class ChunkReceiver(
     /**
      * Returns the confirmed write offset for resume.
      */
-    fun confirmedOffset(transferId: UUID): Long {
-        return store.require(transferId).confirmedOffset
+    fun confirmedOffset(transferId: UUID, callerDeviceId: UUID): Long {
+        val session = store.require(transferId)
+        TransferPartyGuard.requireSource(callerDeviceId, session.sourceDeviceId)
+        return session.confirmedOffset
     }
 
     /**
-     * Marks cancelled and deletes the pending entry.
+     * Peer cancel-notify. Requires the caller to be a party.
      */
-    fun cancel(transferId: UUID) {
+    fun cancel(transferId: UUID, callerDeviceId: UUID) {
         val session = store.get(transferId) ?: return
+        TransferPartyGuard.requireParty(callerDeviceId, session.sourceDeviceId, null)
+        cancelBody(session)
+    }
+
+    /**
+     * Phone-local cancel. No peer party check.
+     */
+    fun cancelLocal(transferId: UUID) {
+        val session = store.get(transferId) ?: return
+        cancelBody(session)
+    }
+
+    private fun cancelBody(session: ReceiveSession) {
         if (session.status == ReceiveSession.ACTIVE || session.status == ReceiveSession.PAUSED) {
             abort(session, ReceiveSession.CANCELLED, null)
             onProgress(session)
@@ -227,10 +263,15 @@ class ChunkReceiver(
     }
 
     /**
-     * Marks failed and deletes the pending entry.
+     * Peer fail-notify. Requires the caller to be a party.
      */
-    fun fail(transferId: UUID, reason: String?) {
+    fun fail(transferId: UUID, reason: String?, callerDeviceId: UUID) {
         val session = store.get(transferId) ?: return
+        TransferPartyGuard.requireParty(callerDeviceId, session.sourceDeviceId, null)
+        failBody(session, reason)
+    }
+
+    private fun failBody(session: ReceiveSession, reason: String?) {
         if (session.status == ReceiveSession.ACTIVE
             || session.status == ReceiveSession.PAUSED
             || session.status == ReceiveSession.PENDING
@@ -241,17 +282,35 @@ class ChunkReceiver(
     }
 
     /**
-     * Holds receive at current offset. False when this id is not a receive.
+     * Peer pause-notify. Requires the caller to be a party.
      */
-    fun pause(transferId: UUID, pausedBy: String, reason: String? = null): Boolean {
+    fun pause(
+        transferId: UUID,
+        pausedBy: String,
+        reason: String? = null,
+        callerDeviceId: UUID,
+    ): Boolean {
         val session = store.get(transferId) ?: return false
+        TransferPartyGuard.requireParty(callerDeviceId, session.sourceDeviceId, null)
+        return pauseBody(session, pausedBy, reason)
+    }
+
+    /**
+     * Phone-local pause. No peer party check.
+     */
+    fun pauseLocal(transferId: UUID, pausedBy: String, reason: String? = null): Boolean {
+        val session = store.get(transferId) ?: return false
+        return pauseBody(session, pausedBy, reason)
+    }
+
+    private fun pauseBody(session: ReceiveSession, pausedBy: String, reason: String?): Boolean {
         session.status = ReceiveSession.PAUSED
         session.pausedBy = pausedBy
         if (!reason.isNullOrBlank()) {
             session.failureReason = reason
         }
         persist(session)
-        stallTracker.remove(transferId)
+        stallTracker.remove(session.transferId)
         onProgress(session)
         if (DiskPauseRule.isReceiverDiskPause(
                 session.status,
@@ -265,10 +324,23 @@ class ChunkReceiver(
     }
 
     /**
-     * Clears pause so chunks can land again. Re-checks the reserve first.
+     * Peer resume-notify. Requires the caller to be a party.
      */
-    fun resume(transferId: UUID) {
+    fun resume(transferId: UUID, callerDeviceId: UUID) {
         val session = store.get(transferId) ?: return
+        TransferPartyGuard.requireParty(callerDeviceId, session.sourceDeviceId, null)
+        resumeBody(session)
+    }
+
+    /**
+     * Phone-local resume. No peer party check.
+     */
+    fun resumeLocal(transferId: UUID) {
+        val session = store.get(transferId) ?: return
+        resumeBody(session)
+    }
+
+    private fun resumeBody(session: ReceiveSession) {
         val remaining = session.fileSize - session.confirmedOffset
         val needed = if (remaining < 0L) 0L else remaining
         if (DiskPauseRule.resumeStayPaused(hasRoom(needed))) {
@@ -283,9 +355,9 @@ class ChunkReceiver(
         session.pausedBy = null
         session.failureReason = null
         persist(session)
-        stallTracker.touch(transferId)
+        stallTracker.touch(session.transferId)
         onProgress(session)
-        TransferDiskNotifier.cancel(context, transferId)
+        TransferDiskNotifier.cancel(context, session.transferId)
     }
 
     /**

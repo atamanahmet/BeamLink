@@ -16,6 +16,7 @@ import com.beamlink.peer.receive.DiskReserve
 import com.beamlink.peer.receive.ProtocolException
 import com.beamlink.peer.receive.ReceiveForegroundService
 import com.beamlink.peer.receive.ReceiveSession
+import com.beamlink.peer.send.TargetDeviceId
 import com.beamlink.peer.send.TransferForegroundService
 import com.getcapacitor.JSArray
 import com.getcapacitor.JSObject
@@ -390,7 +391,11 @@ class BeamlinkPlugin : Plugin() {
         }
         val targetIp = call.getString("targetIp") ?: ""
         val targetPort = call.getInt("targetPort") ?: 0
-        val targetDeviceId = call.getString("targetDeviceId") ?: ""
+        val targetDeviceId = TargetDeviceId.parseUuidOrNull(call.getString("targetDeviceId"))
+        if (targetDeviceId == null) {
+            call.reject("targetDeviceId required")
+            return
+        }
         val tlsFingerprint = call.getString("tlsFingerprint")?.takeIf { it.isNotBlank() }
         val tlsPortRaw = call.data.optInt("tlsPort", -1)
         val tlsPort = tlsPortRaw.takeIf { it > 0 }
@@ -416,7 +421,7 @@ class BeamlinkPlugin : Plugin() {
             sizes,
             targetIp,
             targetPort,
-            targetDeviceId,
+            targetDeviceId.toString(),
             tlsFingerprint,
             tlsPort,
         )
@@ -579,7 +584,7 @@ class BeamlinkPlugin : Plugin() {
                     it.status == ReceiveSession.PAUSED
                 }
                 if (session != null) {
-                    AppGraph.chunkReceiver.resume(session.transferId)
+                    AppGraph.chunkReceiver.resumeLocal(session.transferId)
                 }
                 call.resolve()
             } catch (e: ProtocolException) {

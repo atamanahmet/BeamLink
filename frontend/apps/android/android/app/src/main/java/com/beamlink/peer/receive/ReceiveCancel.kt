@@ -25,7 +25,7 @@ class ReceiveCancel(
         for (session in snapshot) {
             val ip = session.sourceIp
             val port = session.sourcePort
-            receiver.cancel(session.transferId)
+            receiver.cancelLocal(session.transferId)
             if (tokens == null || ip.isNullOrBlank() || port == null) {
                 continue
             }
